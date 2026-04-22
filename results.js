@@ -341,7 +341,11 @@
 
   function renderComparisonTable() {
     const entries = allComparisonEntries();
-    comparisonTableBody.innerHTML = entries.map((entry, index) => `
+    comparisonTableBody.innerHTML = entries.map((entry, index) => {
+      const replayLink = entry.bestIteration
+        ? `<a class="btn-link" href="arena.html?loadModel=${encodeURIComponent(entry.model)}&loadIter=${entry.bestIteration.iter}" target="_blank" rel="noopener noreferrer">Replay Best</a>`
+        : 'n/a';
+      return `
       <tr>
         <td>${index + 1}</td>
         <td>${escapeHtml(entry.model)}</td>
@@ -351,8 +355,10 @@
         <td>${escapeHtml(formatPercentDelta(entry.netImprovement))}</td>
         <td>${escapeHtml(entry.completedIterations)}</td>
         <td>${escapeHtml(formatStopReason(entry.stopReason))}</td>
+        <td>${replayLink}</td>
       </tr>
-    `).join('');
+    `;
+    }).join('');
   }
 
   function renderChart() {
@@ -544,6 +550,12 @@
     const selectedIteration = modelResult.iterations.find(iter => iter.iter === state.selectedIteration && !iter.error)
       || modelResult.iterations.find(iter => !iter.error)
       || null;
+
+    const openInArena = document.getElementById('open-in-arena');
+    if (openInArena) {
+      const iter = selectedIteration ? selectedIteration.iter : state.selectedIteration;
+      openInArena.href = `arena.html?loadModel=${encodeURIComponent(state.selectedModel)}&loadIter=${iter}`;
+    }
 
     modelSummary.innerHTML = [
       metaItem('Model', modelResult.model),

@@ -88,6 +88,10 @@
   </div>
 
   <div class="top-bar">
+    <label>game</label>
+    <select id="game-selector">
+      <option value="arena-war" selected>Arena War</option>
+    </select>
     <label>players</label>
     <select id="n-players">
       <option value="2">2</option>
@@ -109,6 +113,13 @@
     <button class="btn" id="btn-reset">Reset</button>
     <span class="tick-label">tick <span id="tick-num">0</span></span>
     <div class="winner-banner" id="winner-banner"></div>
+  </div>
+
+  <div class="panel-card" id="loaded-model-panel" style="display:none; margin-bottom:1rem;">
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:12px;">
+      <span id="loaded-model-info" style="font-size:13px; color:#666;"></span>
+      <button class="btn" id="btn-clear-loaded">Clear</button>
+    </div>
   </div>
 
   <div class="arena-row">

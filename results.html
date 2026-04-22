@@ -215,6 +215,26 @@
       font-weight: 500;
     }
 
+    .btn-link {
+      display: inline-flex;
+      align-items: center;
+      padding: 9px 14px;
+      border-radius: var(--radius-sm);
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-secondary);
+      font-size: 13px;
+      text-decoration: none;
+      font-weight: 500;
+      transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+    }
+
+    .btn-link:hover {
+      background: var(--bg-chip);
+      border-color: var(--border-hover);
+      color: var(--text-primary);
+    }
+
     select {
       min-width: 220px;
       border: 1px solid var(--border-subtle);
@@ -743,6 +763,7 @@
                   <th>Net improvement</th>
                   <th>Successful iterations</th>
                   <th>Stop reason</th>
+                  <th>Replay</th>
                 </tr>
               </thead>
               <tbody id="comparison-table-body"></tbody>
@@ -790,6 +811,7 @@
               Iteration
               <select id="iteration-select"></select>
             </label>
+            <a id="open-in-arena" class="btn-link" href="arena.html" target="_blank" rel="noopener noreferrer">Open in Arena</a>
           </div>
         </section>
 

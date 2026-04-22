@@ -172,21 +172,25 @@
     }
   }
 
+  function compileAlgorithm(code) {
+    if (!code || !code.trim()) throw new Error('no code provided');
+    // eslint-disable-next-line no-new-func
+    const fn = new Function(`
+      const EMPTY = -1;
+      ${code}
+      // Return the last declared function (model convention)
+      const fns = Object.entries(this).filter(([,v]) => typeof v === 'function');
+      return eval((${JSON.stringify(code)}).match(/function\\s+(\\w+)/)?.[1] || 'undefined');
+    `).call({});
+    if (typeof fn !== 'function') throw new Error('No function found in code');
+    return fn;
+  }
+
   document.getElementById('btn-inject').addEventListener('click', () => {
     const code = document.getElementById('algo-code').value.trim();
     const slot = parseInt(injectSlot.value);
-    if (!code) { injectStatus.textContent = 'no code provided'; return; }
     try {
-      // Safely evaluate the function from the textarea
-      // eslint-disable-next-line no-new-func
-      const fn = new Function(`
-        const EMPTY = -1;
-        ${code}
-        // Return the last declared function (model convention)
-        const fns = Object.entries(this).filter(([,v]) => typeof v === 'function');
-        return eval((${JSON.stringify(code)}).match(/function\\s+(\\w+)/)?.[1] || 'undefined');
-      `).call({});
-      if (typeof fn !== 'function') throw new Error('No function found in code');
+      const fn = compileAlgorithm(code);
       ALGO_NAMES[slot] = fn.name || `Model v${history.length + 1}`;
       customAlgos[slot] = fn;
       injectStatus.textContent = `injected as player ${slot + 1}`;
@@ -222,7 +226,75 @@
   document.getElementById('n-players').addEventListener('change', () => { stopGame(); init(); });
   document.getElementById('grid-size').addEventListener('change', () => { stopGame(); init(); });
 
+  document.getElementById('btn-clear-loaded').addEventListener('click', () => {
+    customAlgos = [...ALGOS];
+    document.getElementById('loaded-model-panel').style.display = 'none';
+    injectStatus.textContent = 'cleared loaded model';
+    stopGame();
+    init();
+  });
+
+  // ─── Auto-load from URL params ─────────────────────────────────────────────
+  async function maybeAutoLoadFromParams() {
+    const params = new URLSearchParams(window.location.search);
+    const loadModel = params.get('loadModel');
+    const loadIter = params.get('loadIter');
+    if (!loadModel || loadIter == null) return;
+
+    const panel = document.getElementById('loaded-model-panel');
+    const info = document.getElementById('loaded-model-info');
+
+    try {
+      const response = await fetch('eval-results.json', { cache: 'no-store' });
+      if (!response.ok) throw new Error(`Could not load eval-results.json (${response.status})`);
+      const data = await response.json();
+
+      // Support both normalized and legacy single-model schemas
+      let models = data.models;
+      if (!models && data.model && Array.isArray(data.iterations)) {
+        models = {
+          [data.model]: {
+            iterations: data.iterations,
+          },
+        };
+      }
+
+      const modelData = models?.[loadModel];
+      if (!modelData) throw new Error(`Model "${loadModel}" not found in results`);
+
+      const iterations = Array.isArray(modelData.iterations) ? modelData.iterations : [];
+      const targetIter = parseInt(loadIter, 10);
+      const iteration = iterations.find(iter => iter.iter === targetIter);
+      if (!iteration) throw new Error(`Iteration ${loadIter} not found for model "${loadModel}"`);
+
+      const rawCode = iteration.rawCode;
+      if (!rawCode) throw new Error(`No raw code available for ${loadModel} iteration ${loadIter}`);
+
+      const fn = compileAlgorithm(rawCode);
+      const nameHint = iteration.algoName || fn.name || loadModel;
+      ALGO_NAMES[0] = nameHint;
+      customAlgos[0] = fn;
+
+      stopGame();
+      init();
+
+      if (panel) panel.style.display = 'block';
+      if (info) info.textContent = `Loaded model algorithm: ${loadModel} iteration ${targetIter}`;
+      if (injectStatus) injectStatus.textContent = `auto-loaded ${loadModel} iter ${targetIter}`;
+
+      // Clear URL params so refresh doesn't re-fetch
+      const cleanUrl = window.location.pathname + window.location.hash;
+      history.replaceState(null, '', cleanUrl);
+    } catch (err) {
+      if (panel) panel.style.display = 'block';
+      if (info) info.textContent = `Warning: ${err.message}`;
+      if (injectStatus) injectStatus.textContent = `auto-load failed: ${err.message}`;
+      // Leave arena in default state (init() already ran before this)
+    }
+  }
+
   // ─── Boot ──────────────────────────────────────────────────────────────────
   init();
+  maybeAutoLoadFromParams();
 
 })();
