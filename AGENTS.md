@@ -11,6 +11,9 @@
   "This benchmark measures a model's ability to iteratively improve a spatial territory algorithm through adversarial competition feedback."
 - Do not overclaim general coding ability, general reasoning, or broad software engineering ability from this benchmark alone.
 - The methodology doc is explicit that construct validity matters more than leaderboard theater.
+- Two modes now exist with distinct scientific claims:
+  - **Self-play mode**: Measures a model's ability to improve from its own generated feedback loop (closed-system optimization).
+  - **Adversarial mode**: Measures a model's ability to analyze and exploit opponent algorithms written by OTHER models (open-system competitive adaptation). This tests cross-model generalization and opponent modeling, not just self-improvement.
 
 ## Product Direction
 - The primary product story is benchmark-first: compare multiple models on the same iterative Arena War protocol, then inspect the results in the dashboard.
@@ -42,13 +45,19 @@
   - Owns prompt -> generated algorithm -> extraction -> headless evaluation -> feedback -> plateau stop -> `eval-results.json`.
   - Supports repeated `--model` flags for multi-model comparisons.
   - Supports multiple LLM providers via `--provider anthropic|openai` (default: anthropic).
+  - Supports two learning modes via `--mode self-play|adversarial` (default: self-play):
+    - **Self-play**: Each model only sees its own prior iterations when building prompts.
+    - **Adversarial**: After round 1, models also see anonymized top-2 opponent algorithms from OTHER models' runs as source code to beat.
+  - Uses seeded randomness (`seededRandom`) to vary starting positions per game while keeping game rules and algorithm behavior deterministic.
+  - Computes per-iteration statistics (mean, std, min/max, 95% CI) stored in each iteration result.
   - Current output schema is comparison-oriented and includes protocol metadata, model summaries, per-iteration details, prompt feedback, and representative board snapshots.
 - `providers.js`
   - Unified provider interface supporting Anthropic and OpenAI.
   - Exports `callModel(provider, model, prompt, maxTokens)` which returns `{ text, usage, latency }`.
 - `prompts.js`
-  - Defines the first-round prompt and iterative prompt.
+  - Defines the first-round prompt (`BASELINE_PROMPT`), iterative prompt (`buildIterativePrompt`), and adversarial prompt (`buildAdversarialPrompt`).
   - Iterative prompt feeds leaderboard, current winner code, and recent history back into later rounds.
+  - Adversarial prompt adds an "OPPONENT ALGORITHMS TO BEAT" section with anonymized top-2 opponent source code (e.g., "Opponent A", "Opponent B").
 - `results.html` and `results.js`
   - Main user-facing results surface.
   - Intended to show who improved fastest, who finished strongest, why the comparison is trustworthy, and what the selected iteration actually did.
@@ -102,21 +111,29 @@
 ## Current State Of The Runner
 - Function extraction was fixed to support model-generated code that contains JavaScript template literals.
 - A real smoke run succeeded after that extractor fix.
+- Phase 2 (Two-Mode Adversarial Learning) is complete:
+  - `self-play` and `adversarial` modes are both implemented.
+  - Adversarial mode uses round-robin per iteration: all models complete iteration N before any model starts iteration N+1.
+  - Opponent algorithms are anonymized ("Opponent A", "Opponent B") and only exposed after iteration 1.
+  - Single-model adversarial requests gracefully degrade to self-play with a console warning.
+- Phase 3 (Statistical Rigor Engine) is complete:
+  - `seededRandom` LCG produces deterministic but varied starting positions per game.
+  - `createGrid` varies seed radius (0.50-0.60 of base) and angular jitter per player based on the seed.
+  - Per-iteration statistics (mean, std, min/max, 95% CI) are computed and stored in `iteration.stats`.
+  - Summary `bestIteration` and `latestIteration` both include `stats`.
 - Known runner caveats:
-  - repeated games in one iteration are currently effectively deterministic under the present setup, so `gamesPerIter` is not yet giving meaningful spread
   - plateau logic exists, but the methodology wants stronger statistical interpretation around plateau and significance
   - full game logic is duplicated between browser and Node paths
 
 ## Known Gaps And Next Priorities
-- The most important rigor gaps to address next:
-  1. Add controlled variance to evaluation runs so multi-game averages mean something.
-  2. Report consistency / spread, not just mean territory and mean ticks.
-  3. Move toward `N >= 5` as the default comparison setting.
-  4. Add failure taxonomy fields to `eval-results.json`.
-  5. Add eval versioning / changelog metadata.
-  6. Consider held-out reference algorithms and Elo-style rating.
+- Phase 3 addressed: controlled variance (seeded randomness), consistency/spread reporting, and `N >= 5` default are all implemented.
+- The most important rigor gaps still open:
+  1. Add failure taxonomy fields to `eval-results.json`.
+  2. Add eval versioning / changelog metadata.
+  3. Consider held-out reference algorithms and Elo-style rating.
+  4. Stronger statistical interpretation around plateau detection (e.g., compare against CI overlap rather than fixed thresholds).
 - The most important UX gaps to address next:
-  1. Show consistency or uncertainty in the dashboard.
+  1. Show consistency or uncertainty in the dashboard (CI bands, variance indicators).
   2. Surface limitations more explicitly.
   3. Provide a more seamless path from "best-vs-best candidate" to actual arena replay.
 
@@ -130,6 +147,7 @@
   - `npm run eval:quick`
   - `npm run eval -- --model claude-sonnet-4-20250514 --model gpt-4o`
   - `npm run eval -- --provider openai --model gpt-4o`
+  - `npm run eval -- --mode adversarial --model claude-sonnet-4-20250514 --model gpt-4o`
 - API keys required before running the eval harness:
   - `ANTHROPIC_API_KEY` for anthropic provider (default)
   - `OPENAI_API_KEY` for openai provider

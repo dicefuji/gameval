@@ -22,7 +22,7 @@
 const fs = require('fs');
 const path = require('path');
 const { ALGOS, ALGO_NAMES } = require('./algorithms');
-const { BASELINE_PROMPT, buildIterativePrompt } = require('./prompts');
+const { BASELINE_PROMPT, buildIterativePrompt, buildAdversarialPrompt } = require('./prompts');
 const { callModel, validateProvider } = require('./providers');
 
 // ─── Headless engine (copy of engine.js logic for Node) ──────────────────────
@@ -35,6 +35,16 @@ const DEFAULT_GRID_SIZE = 60;
 const DEFAULT_N_PLAYERS = 4;
 const DEFAULT_PLATEAU_PATIENCE = 2;
 const DEFAULT_PLATEAU_MIN_IMPROVEMENT = 1;
+const DEFAULT_MODE = 'self-play';
+
+function seededRandom(seed) {
+  // Simple LCG: returns a function that generates [0,1) floats deterministically
+  let s = seed || 1;
+  return () => {
+    s = (s * 16807 + 0) % 2147483647;
+    return (s - 1) / 2147483646;
+  };
+}
 
 function buildMask(size) {
   const mask = [];
@@ -49,7 +59,7 @@ function buildMask(size) {
   return mask;
 }
 
-function createGrid(size, nPlayers, mask) {
+function createGrid(size, nPlayers, mask, rng) {
   const grid = [];
   for (let r = 0; r < size; r++) {
     grid.push([]);
@@ -57,10 +67,15 @@ function createGrid(size, nPlayers, mask) {
       grid[r].push(mask[r][c] ? EMPTY : null);
   }
   const cx = Math.floor(size / 2), cy = Math.floor(size / 2);
-  const seedRadius = Math.floor(size / 2) * 0.55;
+  const baseRadius = Math.floor(size / 2);
+  const seedRadius = rng
+    ? baseRadius * (0.50 + rng() * 0.10)
+    : baseRadius * 0.55;
   const angleStep = (2 * Math.PI) / nPlayers;
   for (let i = 0; i < nPlayers; i++) {
-    const angle = angleStep * i - Math.PI / 2;
+    const angle = rng
+      ? angleStep * i - Math.PI / 2 + (rng() - 0.5) * 0.1
+      : angleStep * i - Math.PI / 2;
     const sr = Math.max(0, Math.min(size-1, Math.round(cx + seedRadius * Math.sin(angle))));
     const sc = Math.max(0, Math.min(size-1, Math.round(cy + seedRadius * Math.cos(angle))));
     for (const [dr, dc] of [[-1,0],[1,0],[0,-1],[0,1],[0,0],[-1,-1],[-1,1],[1,-1],[1,1]]) {
@@ -73,10 +88,11 @@ function createGrid(size, nPlayers, mask) {
 }
 
 function runGame(size, algos, opts = {}) {
-  const { captureFinalGrid = false } = opts;
+  const { captureFinalGrid = false, seed } = opts;
   const nPlayers = algos.length;
   const mask = buildMask(size);
-  const grid = createGrid(size, nPlayers, mask);
+  const rng = seed !== undefined ? seededRandom(seed) : null;
+  const grid = createGrid(size, nPlayers, mask, rng);
   const claimsPerTick = Math.max(1, Math.floor(size / 8));
   let tick = 0;
   const MAX_TICKS = size * size;
@@ -188,6 +204,233 @@ function pickRepresentativeGame(games, avgPct) {
   });
 }
 
+function computeStats(pcts) {
+  const n = pcts.length;
+  const mean = pcts.reduce((a, b) => a + b, 0) / n;
+  const variance = pcts.reduce((sum, p) => sum + (p - mean) ** 2, 0) / n;
+  const std = Math.sqrt(variance);
+  // Conservative t-multiplier for small samples (3-5 games)
+  const tMultiplier = 2.0;
+  const ci95Low = mean - tMultiplier * std / Math.sqrt(n);
+  const ci95High = mean + tMultiplier * std / Math.sqrt(n);
+  const minPct = Math.min(...pcts);
+  const maxPct = Math.max(...pcts);
+  return { meanPct: mean, stdPct: std, minPct, maxPct, ci95Low, ci95High, n };
+}
+
+function createInitialState(baselineOpponents) {
+  const baselineCode = baselineOpponents[0]?.fn?.toString() || '';
+  return {
+    iterations: [],
+    leaderboard: [],
+    gameHistory: [],
+    currentWinner: null,
+    currentWinnerCode: baselineCode,
+    currentWinnerName: baselineOpponents[0]?.name || 'Baseline',
+    plateauStreak: 0,
+    stopReason: 'max_iterations_reached',
+    lastSuccessfulAvgPct: null,
+    stopped: false,
+  };
+}
+
+function collectTopOpponentAlgos(states, currentModel, maxOpponents = 2) {
+  const opponentEntries = [];
+  for (const [modelName, state] of Object.entries(states)) {
+    if (modelName === currentModel) continue;
+    const successfulIters = state.iterations.filter(it => !it.error);
+    if (!successfulIters.length) continue;
+    const bestIter = successfulIters.reduce((best, it) =>
+      (!best || it.avgPct > best.avgPct) ? it : best, null);
+    if (bestIter) {
+      opponentEntries.push({
+        name: `Opponent ${String.fromCharCode(65 + opponentEntries.length)}`,
+        code: bestIter.rawCode,
+        avgPct: bestIter.avgPct,
+      });
+      if (opponentEntries.length >= maxOpponents) break;
+    }
+  }
+  return opponentEntries;
+}
+
+async function runSingleIteration({
+  provider,
+  model,
+  iter,
+  maxIterations,
+  gamesPerIter,
+  gridSize,
+  nPlayers,
+  baselineOpponents,
+  mode,
+  opponentAlgos,
+  currentState,
+  modelIndex,
+  plateauPatience = DEFAULT_PLATEAU_PATIENCE,
+  plateauMinImprovement = DEFAULT_PLATEAU_MIN_IMPROVEMENT,
+}) {
+  const state = { ...currentState };
+  const {
+    leaderboard, gameHistory,
+    currentWinner, currentWinnerCode, currentWinnerName,
+    plateauStreak, lastSuccessfulAvgPct,
+  } = state;
+
+  const promptFeedback = buildPromptFeedback({
+    iter,
+    leaderboard,
+    currentWinner,
+    currentWinnerCode,
+    currentWinnerName,
+    gameHistory,
+  });
+
+  let prompt;
+  if (iter === 1) {
+    prompt = BASELINE_PROMPT;
+  } else if (mode === 'adversarial' && opponentAlgos?.length > 0) {
+    prompt = buildAdversarialPrompt({
+      iteration: iter,
+      totalIterations: maxIterations,
+      leaderboard,
+      winnerName: currentWinnerName,
+      winnerCode: currentWinnerCode,
+      winnerPct: currentWinner?.avgPct ?? 0,
+      gameHistory,
+      opponentAlgos,
+    });
+  } else {
+    prompt = buildIterativePrompt({
+      iteration: iter,
+      totalIterations: maxIterations,
+      leaderboard,
+      winnerName: currentWinnerName,
+      winnerCode: currentWinnerCode,
+      winnerPct: currentWinner?.avgPct ?? 0,
+      gameHistory,
+    });
+  }
+
+  console.log(`Calling ${provider}/${model}...`);
+  const { text: rawCode } = await callModel(provider, model, prompt, 2048);
+
+  let modelFn;
+  try {
+    modelFn = extractFunction(rawCode);
+    console.log(`Extracted function: ${modelFn.name || '(anonymous)'}`);
+  } catch (error) {
+    console.error(`Failed to extract function: ${error.message}`);
+    const iterationResult = {
+      iter,
+      promptMode: promptFeedback.promptMode,
+      promptFeedback,
+      error: error.message,
+      rawCode,
+    };
+    state.plateauStreak = plateauStreak + 1;
+    if (state.plateauStreak >= plateauPatience) {
+      state.stopped = true;
+      state.stopReason = 'plateau_after_failed_iterations';
+    }
+    return { iterationResult, updatedState: state };
+  }
+
+  const gameRuns = [];
+  for (let gameIndex = 0; gameIndex < gamesPerIter; gameIndex++) {
+    const algos = [modelFn, ...baselineOpponents.map(entry => entry.fn)];
+    const seed = modelIndex * 1000 + iter * 100 + gameIndex;
+    const result = runGame(gridSize, algos, { captureFinalGrid: true, seed });
+    const pct = Math.round((result.scores[0] / result.totalCells) * 100);
+    const winnerIndex = result.scores.indexOf(Math.max(...result.scores));
+    gameRuns.push({
+      gameNumber: gameIndex + 1,
+      pct,
+      ticks: result.ticks,
+      scores: result.scores,
+      totalCells: result.totalCells,
+      winnerIndex,
+      finalGrid: result.finalGrid,
+    });
+    console.log(`  Game ${gameIndex + 1}: ${pct}% in ${result.ticks} ticks`);
+  }
+
+  const pcts = gameRuns.map(g => g.pct);
+  const stats = computeStats(pcts);
+  const avgPct = Math.round(stats.meanPct);
+  const avgTicks = Math.round(gameRuns.reduce((sum, game) => sum + game.ticks, 0) / gameRuns.length);
+  const algoName = modelFn.name || `${model.replace(/[^a-z0-9]+/gi, '_')}_iter_${iter}`;
+  const representativeGame = pickRepresentativeGame(gameRuns, avgPct);
+  const improvementFromLastIter = lastSuccessfulAvgPct === null ? null : avgPct - lastSuccessfulAvgPct;
+  const improvementFromBestBeforeIter = currentWinner ? avgPct - currentWinner.avgPct : null;
+
+  const iterationResult = {
+    iter,
+    promptMode: promptFeedback.promptMode,
+    promptFeedback,
+    algoName,
+    rawCode,
+    avgPct,
+    avgTicks,
+    stats,
+    improvementFromLastIter,
+    improvementFromBestBeforeIter,
+    baselineOpponents: baselineOpponents.map(entry => entry.name),
+    games: gameRuns.map(({ finalGrid, ...rest }) => rest),
+    representativeGame,
+  };
+
+  state.iterations.push(iterationResult);
+  state.gameHistory.push({
+    iter,
+    algoName,
+    avgPct,
+    ticks: representativeGame?.ticks ?? avgTicks,
+  });
+  state.leaderboard.push({ name: algoName, avgPct, runs: gamesPerIter, iter });
+  state.leaderboard.sort((a, b) => b.avgPct - a.avgPct);
+
+  let meaningfulImprovement = false;
+  if (!state.currentWinner || avgPct > state.currentWinner.avgPct) {
+    const bestGain = state.currentWinner ? avgPct - state.currentWinner.avgPct : avgPct;
+    meaningfulImprovement = bestGain >= plateauMinImprovement;
+    state.currentWinner = { iter, avgPct, avgTicks, algoName };
+    state.currentWinnerCode = rawCode;
+    state.currentWinnerName = algoName;
+    console.log(`  ★ New best so far: ${avgPct}%`);
+  }
+
+  state.plateauStreak = meaningfulImprovement ? 0 : plateauStreak + 1;
+  state.lastSuccessfulAvgPct = avgPct;
+  console.log(`  → Avg: ${avgPct}% (std: ${stats.stdPct.toFixed(1)}%, CI95: [${stats.ci95Low.toFixed(1)}%, ${stats.ci95High.toFixed(1)}%])`);
+
+  if (state.plateauStreak >= plateauPatience && iter < maxIterations) {
+    state.stopped = true;
+    state.stopReason = 'plateau_reached';
+    console.log(`  ↳ stopping early: no >= ${plateauMinImprovement}% best-score gain in ${plateauPatience} consecutive rounds`);
+  }
+
+  return { iterationResult, updatedState: state };
+}
+
+function buildModelResult(model, baselineOpponents, iterations, state, config) {
+  const { maxIterations, plateauPatience, plateauMinImprovement } = config;
+  return {
+    model,
+    baselineOpponents: baselineOpponents.map(entry => entry.name),
+    summary: summarizeModelRun({
+      model,
+      iterations,
+      stopReason: state.stopReason,
+      maxIterations,
+      plateauPatience,
+      plateauMinImprovement,
+      baselineOpponents: baselineOpponents.map(entry => entry.name),
+    }),
+    iterations,
+  };
+}
+
 function summarizeModelRun({ model, iterations, stopReason, maxIterations, plateauPatience, plateauMinImprovement, baselineOpponents }) {
   const successfulIterations = iterations.filter(iter => !iter.error);
   const learningCurve = successfulIterations.map(iter => ({
@@ -218,6 +461,7 @@ function summarizeModelRun({ model, iterations, stopReason, maxIterations, plate
       algoName: bestIteration.algoName,
       avgPct: bestIteration.avgPct,
       avgTicks: bestIteration.avgTicks,
+      stats: bestIteration.stats || null,
       rawCode: bestIteration.rawCode,
     } : null,
     latestIteration: lastIteration ? {
@@ -225,6 +469,7 @@ function summarizeModelRun({ model, iterations, stopReason, maxIterations, plate
       algoName: lastIteration.algoName,
       avgPct: lastIteration.avgPct,
       avgTicks: lastIteration.avgTicks,
+      stats: lastIteration.stats || null,
     } : null,
     learningCurve,
     suggestedFollowOn: bestIteration ? {
@@ -246,155 +491,49 @@ async function runModelEval({
   plateauPatience,
   plateauMinImprovement,
   baselinePool,
+  mode = 'self-play',
+  modelIndex = 0,
+  opponentAlgos = [],
 }) {
   const baselineOpponents = baselinePool.slice(0, nPlayers - 1);
+  let state = createInitialState(baselineOpponents);
   const iterations = [];
-  const leaderboard = [];
-  const gameHistory = [];
-  const baselineCode = baselineOpponents[0]?.fn?.toString() || '';
-
-  let currentWinner = null;
-  let currentWinnerCode = baselineCode;
-  let currentWinnerName = baselineOpponents[0]?.name || 'Baseline';
-  let plateauStreak = 0;
-  let stopReason = 'max_iterations_reached';
-  let lastSuccessfulAvgPct = null;
 
   console.log(`\n=== Benchmarking ${model} ===`);
 
   for (let iter = 1; iter <= maxIterations; iter++) {
     console.log(`\n--- ${model}: iteration ${iter}/${maxIterations} ---`);
 
-    const promptFeedback = buildPromptFeedback({
+    const { iterationResult, updatedState } = await runSingleIteration({
+      provider,
+      model,
       iter,
-      leaderboard,
-      currentWinner,
-      currentWinnerCode,
-      currentWinnerName,
-      gameHistory,
+      maxIterations,
+      gamesPerIter,
+      gridSize,
+      nPlayers,
+      baselineOpponents,
+      mode,
+      opponentAlgos,
+      currentState: state,
+      modelIndex,
+      plateauPatience,
+      plateauMinImprovement,
     });
 
-    const prompt = iter === 1
-      ? BASELINE_PROMPT
-      : buildIterativePrompt({
-          iteration: iter,
-          totalIterations: maxIterations,
-          leaderboard,
-          winnerName: currentWinnerName,
-          winnerCode: currentWinnerCode,
-          winnerPct: currentWinner?.avgPct ?? 0,
-          gameHistory,
-        });
+    state = updatedState;
+    iterations.push(iterationResult);
 
-    console.log(`Calling ${provider}/${model}...`);
-    const { text: rawCode } = await callModel(provider, model, prompt, 2048);
-
-    let modelFn;
-    try {
-      modelFn = extractFunction(rawCode);
-      console.log(`Extracted function: ${modelFn.name || '(anonymous)'}`);
-    } catch (error) {
-      console.error(`Failed to extract function: ${error.message}`);
-      iterations.push({
-        iter,
-        promptMode: promptFeedback.promptMode,
-        promptFeedback,
-        error: error.message,
-        rawCode,
-      });
-      plateauStreak++;
-      if (plateauStreak >= plateauPatience) {
-        stopReason = 'plateau_after_failed_iterations';
-        break;
-      }
-      continue;
-    }
-
-    const gameRuns = [];
-    for (let gameIndex = 0; gameIndex < gamesPerIter; gameIndex++) {
-      const algos = [modelFn, ...baselineOpponents.map(entry => entry.fn)];
-      const result = runGame(gridSize, algos, { captureFinalGrid: true });
-      const pct = Math.round((result.scores[0] / result.totalCells) * 100);
-      const winnerIndex = result.scores.indexOf(Math.max(...result.scores));
-      gameRuns.push({
-        gameNumber: gameIndex + 1,
-        pct,
-        ticks: result.ticks,
-        scores: result.scores,
-        totalCells: result.totalCells,
-        winnerIndex,
-        finalGrid: result.finalGrid,
-      });
-      console.log(`  Game ${gameIndex + 1}: ${pct}% in ${result.ticks} ticks`);
-    }
-
-    const avgPct = Math.round(gameRuns.reduce((sum, game) => sum + game.pct, 0) / gameRuns.length);
-    const avgTicks = Math.round(gameRuns.reduce((sum, game) => sum + game.ticks, 0) / gameRuns.length);
-    const algoName = modelFn.name || `${model.replace(/[^a-z0-9]+/gi, '_')}_iter_${iter}`;
-    const representativeGame = pickRepresentativeGame(gameRuns, avgPct);
-    const improvementFromLastIter = lastSuccessfulAvgPct === null ? null : avgPct - lastSuccessfulAvgPct;
-    const improvementFromBestBeforeIter = currentWinner ? avgPct - currentWinner.avgPct : null;
-
-    iterations.push({
-      iter,
-      promptMode: promptFeedback.promptMode,
-      promptFeedback,
-      algoName,
-      rawCode,
-      avgPct,
-      avgTicks,
-      improvementFromLastIter,
-      improvementFromBestBeforeIter,
-      baselineOpponents: baselineOpponents.map(entry => entry.name),
-      games: gameRuns.map(({ finalGrid, ...rest }) => rest),
-      representativeGame,
-    });
-
-    gameHistory.push({
-      iter,
-      algoName,
-      avgPct,
-      ticks: representativeGame?.ticks ?? avgTicks,
-    });
-
-    leaderboard.push({ name: algoName, avgPct, runs: gamesPerIter, iter });
-    leaderboard.sort((a, b) => b.avgPct - a.avgPct);
-
-    let meaningfulImprovement = false;
-    if (!currentWinner || avgPct > currentWinner.avgPct) {
-      const bestGain = currentWinner ? avgPct - currentWinner.avgPct : avgPct;
-      meaningfulImprovement = bestGain >= plateauMinImprovement;
-      currentWinner = { iter, avgPct, avgTicks, algoName };
-      currentWinnerCode = rawCode;
-      currentWinnerName = algoName;
-      console.log(`  ★ New best so far: ${avgPct}%`);
-    }
-
-    plateauStreak = meaningfulImprovement ? 0 : plateauStreak + 1;
-    lastSuccessfulAvgPct = avgPct;
-    console.log(`  → Avg: ${avgPct}%`);
-
-    if (plateauStreak >= plateauPatience && iter < maxIterations) {
-      stopReason = 'plateau_reached';
-      console.log(`  ↳ stopping early: no >= ${plateauMinImprovement}% best-score gain in ${plateauPatience} consecutive rounds`);
+    if (state.stopped && iter < maxIterations) {
       break;
     }
   }
 
-  return {
-    model,
-    baselineOpponents: baselineOpponents.map(entry => entry.name),
-    summary: summarizeModelRun({
-      model,
-      iterations,
-      stopReason,
-      maxIterations,
-      plateauPatience,
-      plateauMinImprovement,
-      baselineOpponents: baselineOpponents.map(entry => entry.name),
-    }),
-    iterations,
-  };
+  return buildModelResult(model, baselineOpponents, iterations, state, {
+    maxIterations,
+    plateauPatience,
+    plateauMinImprovement,
+  });
 }
 
 // ─── Main eval loop ───────────────────────────────────────────────────────────
@@ -410,6 +549,7 @@ async function runEval(opts = {}) {
     plateauPatience = DEFAULT_PLATEAU_PATIENCE,
     plateauMinImprovement = DEFAULT_PLATEAU_MIN_IMPROVEMENT,
     outputPath = path.join(__dirname, 'eval-results.json'),
+    mode = DEFAULT_MODE,
   } = opts;
 
   validateProvider(provider);
@@ -417,12 +557,19 @@ async function runEval(opts = {}) {
   const requestedModels = [...new Set(
     ((Array.isArray(models) && models.length) ? models : [model]).filter(Boolean)
   )];
+
+  if (mode === 'adversarial' && requestedModels.length === 1) {
+    console.warn('\n[WARNING] Adversarial mode requires at least 2 models. Degrading to self-play.\n');
+  }
+  const effectiveMode = (mode === 'adversarial' && requestedModels.length > 1) ? 'adversarial' : 'self-play';
+
   const benchmarkResults = {
     generatedAt: new Date().toISOString(),
     schemaVersion: 2,
     protocol: {
       comparisonMode: 'shared_protocol_benchmark',
       frontendPrimarySurface: 'results.html',
+      mode: effectiveMode,
       gamesPerIter,
       maxIterations,
       gridSize,
@@ -436,23 +583,84 @@ async function runEval(opts = {}) {
         'recent_game_history',
       ],
       baselineOpponents: baselinePool.slice(0, nPlayers - 1).map(entry => entry.name),
+      seededRandomness: true,
     },
     models: {},
     rankings: [],
   };
 
-  for (const modelName of requestedModels) {
-    benchmarkResults.models[modelName] = await runModelEval({
-      provider,
-      model: modelName,
-      maxIterations,
-      gamesPerIter,
-      gridSize,
-      nPlayers,
-      plateauPatience,
-      plateauMinImprovement,
-      baselinePool,
-    });
+  if (effectiveMode === 'adversarial') {
+    // Round-robin: all models iter 1, then all models iter 2, etc.
+    const states = {};
+    const allIterations = {};
+
+    for (const modelName of requestedModels) {
+      states[modelName] = createInitialState(baselinePool.slice(0, nPlayers - 1));
+      allIterations[modelName] = [];
+    }
+
+    for (let iter = 1; iter <= maxIterations; iter++) {
+      // Compute opponent algos for this iteration BEFORE running any model
+      const iterOpponentAlgos = {};
+      for (const modelName of requestedModels) {
+        iterOpponentAlgos[modelName] = (iter > 1)
+          ? collectTopOpponentAlgos(states, modelName)
+          : [];
+      }
+
+      for (let modelIdx = 0; modelIdx < requestedModels.length; modelIdx++) {
+        const modelName = requestedModels[modelIdx];
+        if (states[modelName].stopped) continue;
+
+        const { iterationResult, updatedState } = await runSingleIteration({
+          provider,
+          model: modelName,
+          iter,
+          maxIterations,
+          gamesPerIter,
+          gridSize,
+          nPlayers,
+          baselineOpponents: baselinePool.slice(0, nPlayers - 1),
+          mode: iter === 1 ? 'self-play' : 'adversarial',
+          opponentAlgos: iterOpponentAlgos[modelName],
+          currentState: states[modelName],
+          modelIndex: modelIdx,
+          plateauPatience,
+          plateauMinImprovement,
+        });
+
+        states[modelName] = updatedState;
+        allIterations[modelName].push(iterationResult);
+      }
+    }
+
+    for (const modelName of requestedModels) {
+      benchmarkResults.models[modelName] = buildModelResult(
+        modelName,
+        baselinePool.slice(0, nPlayers - 1),
+        allIterations[modelName],
+        states[modelName],
+        { maxIterations, plateauPatience, plateauMinImprovement }
+      );
+    }
+  } else {
+    // Sequential self-play (original behavior)
+    for (let modelIdx = 0; modelIdx < requestedModels.length; modelIdx++) {
+      const modelName = requestedModels[modelIdx];
+      benchmarkResults.models[modelName] = await runModelEval({
+        provider,
+        model: modelName,
+        maxIterations,
+        gamesPerIter,
+        gridSize,
+        nPlayers,
+        plateauPatience,
+        plateauMinImprovement,
+        baselinePool,
+        mode: 'self-play',
+        modelIndex: modelIdx,
+      });
+    }
   }
 
   benchmarkResults.rankings = Object.values(benchmarkResults.models)
@@ -529,6 +737,13 @@ function parseCliArgs(argv) {
         values.plateauMinImprovement = parseFloat(readValue(i, arg));
         i++;
         break;
+      case '--mode':
+        values.mode = readValue(i, arg);
+        if (values.mode !== 'self-play' && values.mode !== 'adversarial') {
+          throw new Error(`Invalid mode: ${values.mode}. Must be 'self-play' or 'adversarial'.`);
+        }
+        i++;
+        break;
       case '--output':
         values.outputPath = path.resolve(readValue(i, arg));
         i++;
@@ -555,6 +770,7 @@ Usage:
 Options:
   --model <name>                    Repeat to benchmark multiple models
   --provider <anthropic|openai>    LLM provider (default: ${DEFAULT_PROVIDER})
+  --mode <self-play|adversarial>   Learning mode: self-play (default) or adversarial (cross-model opponent exposure)
   --iterations <n>                 Target iterations per model (default: ${DEFAULT_MAX_ITERATIONS})
   --games-per-iter <n>             Headless games per iteration (default: ${DEFAULT_GAMES_PER_ITER})
   --grid-size <n>                  Arena grid size (default: ${DEFAULT_GRID_SIZE})
@@ -591,6 +807,7 @@ if (require.main === module) {
     plateauPatience: cliOptions.plateauPatience,
     plateauMinImprovement: cliOptions.plateauMinImprovement,
     outputPath: cliOptions.outputPath,
+    mode: cliOptions.mode,
   }).catch(error => {
     console.error(error);
     process.exit(1);
@@ -603,5 +820,7 @@ module.exports = {
   runModelEval,
   parseCliArgs,
   extractFunction,
+  seededRandom,
   DEFAULT_PROVIDER,
+  DEFAULT_MODE,
 };

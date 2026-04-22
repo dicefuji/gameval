@@ -55,12 +55,14 @@ function testProviderInstantiation() {
 // ─── CLI flag parsing tests ──────────────────────────────────────────────────
 
 function testCliParsing() {
-  const { parseCliArgs, DEFAULT_PROVIDER } = require('./eval-runner');
+  const { parseCliArgs, DEFAULT_PROVIDER, DEFAULT_MODE } = require('./eval-runner');
 
-  // Default provider
+  // Default provider and mode
   const defaults = parseCliArgs(['node', 'eval-runner.js']);
   assert.strictEqual(defaults.provider, DEFAULT_PROVIDER,
     'Default provider should be anthropic');
+  assert.strictEqual(defaults.mode, undefined,
+    'Default mode should be undefined (falls back to DEFAULT_MODE)');
 
   // Explicit provider flag
   const openaiArgs = parseCliArgs(['node', 'eval-runner.js', '--provider', 'openai']);
@@ -71,14 +73,25 @@ function testCliParsing() {
   assert.strictEqual(anthropicArgs.provider, 'anthropic',
     'Should parse --provider anthropic');
 
-  // Multiple models with provider
+  // Mode flag parsing
+  const selfPlayArgs = parseCliArgs(['node', 'eval-runner.js', '--mode', 'self-play']);
+  assert.strictEqual(selfPlayArgs.mode, 'self-play',
+    'Should parse --mode self-play');
+
+  const adversarialArgs = parseCliArgs(['node', 'eval-runner.js', '--mode', 'adversarial']);
+  assert.strictEqual(adversarialArgs.mode, 'adversarial',
+    'Should parse --mode adversarial');
+
+  // Multiple models with provider and mode
   const multiArgs = parseCliArgs([
     'node', 'eval-runner.js',
     '--provider', 'openai',
+    '--mode', 'adversarial',
     '--model', 'gpt-4o',
     '--model', 'gpt-4-turbo',
   ]);
   assert.strictEqual(multiArgs.provider, 'openai');
+  assert.strictEqual(multiArgs.mode, 'adversarial');
   assert.deepStrictEqual(multiArgs.models, ['gpt-4o', 'gpt-4-turbo']);
 
   console.log('  ✓ CLI flag parsing tests passed');

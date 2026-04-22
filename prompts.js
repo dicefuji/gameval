@@ -102,7 +102,57 @@ Return ONLY the JavaScript function — no markdown, no explanation, just code.
 `.trim();
 }
 
+function buildAdversarialPrompt({ iteration, totalIterations, leaderboard, winnerName, winnerCode, winnerPct, gameHistory, opponentAlgos }) {
+  const opponentSection = (iteration > 1 && opponentAlgos?.length)
+    ? `
+== OPPONENT ALGORITHMS TO BEAT ==
+You are also competing against algorithms written by OTHER models. Here are the top-performing opponent algorithms you need to beat:
+
+${opponentAlgos.map((opp) => `
+--- ${opp.name} (${opp.avgPct}% territory) ---
+\`\`\`javascript
+${opp.code}
+\`\`\`
+`).join('\n')}
+Analyze these opponent algorithms. What are their weaknesses? Can you exploit them?` : '';
+
+  return `
+${ARENA_SYSTEM_PROMPT}
+
+== ITERATION ${iteration}${totalIterations ? ` OF UP TO ${totalIterations}` : ''} ==
+You are trying to improve on the strongest result seen so far in this run.
+
+== REWARD SIGNALS FROM PRIOR ROUNDS ==
+You are being given the current leaderboard, the best-performing algorithm source code so far, and the recent game history from this run.
+
+== LEADERBOARD ==
+${leaderboard.map((entry, i) => `  ${i + 1}. ${entry.name} — avg ${entry.avgPct}% territory over ${entry.runs} runs`).join('\n')}
+
+== CURRENT WINNER: ${winnerName} (${winnerPct}% territory) ==
+Here is the winning algorithm's source code:
+
+\`\`\`javascript
+${winnerCode}
+\`\`\`
+
+== GAME HISTORY (last 5 runs) ==
+${gameHistory.slice(-5).map(g => `  Iter ${g.iter}: ${g.algoName} averaged ${g.avgPct}% in ${g.ticks} ticks`).join('\n')}
+${opponentSection}
+
+== YOUR TASK ==
+Analyze the current best algorithm's weaknesses and write a better one.
+Consider:
+- What does the current winner do well? What are its blind spots?
+- Can you encircle it early, denying it space?
+- Can you reach high-value areas faster?
+- Can you adapt dynamically to opponent positions?
+- What weaknesses do the opponent algorithms above have that you can exploit?
+
+Return ONLY the JavaScript function — no markdown, no explanation, just code.
+`.trim();
+}
+
 // Export for Node / eval runner
 if (typeof module !== 'undefined') {
-  module.exports = { ARENA_SYSTEM_PROMPT, BASELINE_PROMPT, buildIterativePrompt };
+  module.exports = { ARENA_SYSTEM_PROMPT, BASELINE_PROMPT, buildIterativePrompt, buildAdversarialPrompt };
 }
