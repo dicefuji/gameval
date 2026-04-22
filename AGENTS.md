@@ -39,6 +39,37 @@
   - Add versioning/changelog semantics for the eval itself.
   - Consider Elo or another opponent-aware rating system instead of relying on territory % alone.
 
+## Multi-Game Architecture (Phase 6)
+- `games/game-interface.js`
+  - Defines the `GameEngine` base class that all benchmark games must implement.
+  - Interface methods:
+    - `step()` — run one tick, return `{ done, state }`
+    - `getResult()` — return `{ scores, metrics }`
+    - `getRulesDescription()` — markdown rules string for LLM prompts
+    - `getBaselinePrompt()` — first-iteration prompt (no history)
+    - `getIterativePrompt(context)` — later-round prompt with history/leaderboard
+    - `validateAlgorithm(fn)` — check if an algorithm function is acceptable
+    - `getDefaultConfig()` — return default game configuration object
+    - `getName()` — return game identifier string
+  - Future games must extend `GameEngine` and export a registration object from `games/<game-name>/index.js`.
+- `games/arena-war/`
+  - The first registered game, implementing the `GameEngine` interface.
+  - Files:
+    - `engine.js` — `ArenaWarEngine extends GameEngine`, adapted from root `engine.js`
+    - `algorithms.js` — built-in baseline strategies (copied from root)
+    - `prompts.js` — prompt templates with added interface wrappers
+    - `index.js` — game registration object exporting `name`, `GameEngine`, `ALGOS`, `ALGO_NAMES`, and `prompts`
+- The root `engine.js`, `algorithms.js`, and `prompts.js` remain the primary working copies.
+  - `games/arena-war/` is the foundation for future pluggability.
+  - The eval-runner and arena still use root copies directly; full delegation is a future step.
+- `eval-runner.js`
+  - Added `loadGame(gameName)` and `--game <name>` CLI flag.
+  - Default game is `arena-war`.
+  - Stores `protocol.game` in `eval-results.json` for future multi-game comparison support.
+- `arena.html`
+  - Added a `<select>` game selector dropdown in the top bar (currently only "Arena War").
+  - UI placeholder for future dynamic game loading.
+
 ## Current Architecture
 - `eval-runner.js`
   - Source of truth for the benchmark loop.

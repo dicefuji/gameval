@@ -37,12 +37,12 @@
 - **Blockers**: None
 
 ### Phase 5: Arena Replay Integration
-- **Status**: PENDING
+- **Status**: IN PROGRESS (subagent: a7328e26)
 - **Files**: `arena.html`, `ui.js`, `results.js`
 - **Goal**: One-click "Load in Arena" from dashboard; URL param preloading; side-by-side replay
-- **Owner**: TBD
-- **Dependencies**: Phase 4 (results.js model selector and iteration inspection must be stable)
-- **Blockers**: Phase 4 completion
+- **Owner**: Frontend sub-agent
+- **Dependencies**: Phase 4 complete
+- **Blockers**: None
 
 **Detailed Spec:**
 - In `results.js`, each model's best iteration row should show a "Replay in Arena" button.
@@ -54,12 +54,12 @@
 - The `ui.js` injection panel should already support this via `replaceAlgorithm` on the `ArenaEngine`.
 
 ### Phase 6: Multi-Game Architecture Foundation
-- **Status**: PENDING
+- **Status**: IN PROGRESS (subagent: 81eda8ac)
 - **Files**: `games/arena-war/` (new), `games/game-interface.js` (new)
 - **Goal**: Move game logic into pluggable directory; define `GameEngine` interface; refactor `eval-runner.js` to load games dynamically
-- **Owner**: TBD
+- **Owner**: Architecture sub-agent
 - **Dependencies**: Phase 1 (eval-runner.js provider refactoring stable)
-- **Blockers**: Phase 1 completion
+- **Blockers**: None
 
 **Detailed Spec:**
 - Create `games/game-interface.js` defining the base interface:

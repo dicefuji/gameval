@@ -36,6 +36,7 @@ const DEFAULT_N_PLAYERS = 4;
 const DEFAULT_PLATEAU_PATIENCE = 2;
 const DEFAULT_PLATEAU_MIN_IMPROVEMENT = 1;
 const DEFAULT_MODE = 'self-play';
+const DEFAULT_GAME = 'arena-war';
 
 function seededRandom(seed) {
   // Simple LCG: returns a function that generates [0,1) floats deterministically
@@ -494,6 +495,7 @@ async function runModelEval({
   mode = 'self-play',
   modelIndex = 0,
   opponentAlgos = [],
+  game = DEFAULT_GAME,
 }) {
   const baselineOpponents = baselinePool.slice(0, nPlayers - 1);
   let state = createInitialState(baselineOpponents);
@@ -536,6 +538,14 @@ async function runModelEval({
   });
 }
 
+function loadGame(gameName) {
+  try {
+    return require(`./games/${gameName}`);
+  } catch (e) {
+    throw new Error(`Game '${gameName}' not found in games/ directory`);
+  }
+}
+
 // ─── Main eval loop ───────────────────────────────────────────────────────────
 async function runEval(opts = {}) {
   const {
@@ -550,7 +560,11 @@ async function runEval(opts = {}) {
     plateauMinImprovement = DEFAULT_PLATEAU_MIN_IMPROVEMENT,
     outputPath = path.join(__dirname, 'eval-results.json'),
     mode = DEFAULT_MODE,
+    game = DEFAULT_GAME,
   } = opts;
+
+  const gameModule = loadGame(game);
+  console.log(`Loaded game: ${gameModule.name}`);
 
   validateProvider(provider);
   const baselinePool = loadBaselineAlgos();
@@ -570,6 +584,7 @@ async function runEval(opts = {}) {
       comparisonMode: 'shared_protocol_benchmark',
       frontendPrimarySurface: 'results.html',
       mode: effectiveMode,
+      game,
       gamesPerIter,
       maxIterations,
       gridSize,
@@ -627,6 +642,7 @@ async function runEval(opts = {}) {
           modelIndex: modelIdx,
           plateauPatience,
           plateauMinImprovement,
+          game,
         });
 
         states[modelName] = updatedState;
@@ -659,6 +675,7 @@ async function runEval(opts = {}) {
         baselinePool,
         mode: 'self-play',
         modelIndex: modelIdx,
+        game,
       });
     }
   }
@@ -744,6 +761,10 @@ function parseCliArgs(argv) {
         }
         i++;
         break;
+      case '--game':
+        values.game = readValue(i, arg);
+        i++;
+        break;
       case '--output':
         values.outputPath = path.resolve(readValue(i, arg));
         i++;
@@ -771,6 +792,7 @@ Options:
   --model <name>                    Repeat to benchmark multiple models
   --provider <anthropic|openai>    LLM provider (default: ${DEFAULT_PROVIDER})
   --mode <self-play|adversarial>   Learning mode: self-play (default) or adversarial (cross-model opponent exposure)
+  --game <name>                      Game module to run (default: ${DEFAULT_GAME})
   --iterations <n>                 Target iterations per model (default: ${DEFAULT_MAX_ITERATIONS})
   --games-per-iter <n>             Headless games per iteration (default: ${DEFAULT_GAMES_PER_ITER})
   --grid-size <n>                  Arena grid size (default: ${DEFAULT_GRID_SIZE})
@@ -808,6 +830,7 @@ if (require.main === module) {
     plateauMinImprovement: cliOptions.plateauMinImprovement,
     outputPath: cliOptions.outputPath,
     mode: cliOptions.mode,
+    game: cliOptions.game,
   }).catch(error => {
     console.error(error);
     process.exit(1);
@@ -821,6 +844,8 @@ module.exports = {
   parseCliArgs,
   extractFunction,
   seededRandom,
+  loadGame,
   DEFAULT_PROVIDER,
   DEFAULT_MODE,
+  DEFAULT_GAME,
 };
