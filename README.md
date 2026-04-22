@@ -104,7 +104,7 @@ Runs the actual benchmark loop. It is responsible for:
 Defines the first-round prompt and the iterative prompt. Later prompts reuse the current leader, leaderboard, and recent game history so that models can improve based on what they learned.
 
 ### `results.html` and `results.js`
-Read `eval-results.json` and present the benchmark as a comparison product: learning curves, per-iteration inspection, representative board snapshots, and final model rankings.
+Read `eval-results.json` and present the benchmark as a comparison product: learning curves, protocol/trust metadata, relative comparison verdicts, per-iteration inspection, representative board snapshots, and final model rankings.
 
 ### `arena.html`, `engine.js`, and `ui.js`
 Provide the manual arena sandbox. This is where algorithms can be watched and inspected directly, and where best-vs-best replay modes can later live.
@@ -175,6 +175,8 @@ npm run eval -- --model claude-sonnet-4-20250514 --model gpt-4o
 ```
 
 The runner writes `eval-results.json` in the repo root. Reload `results.html` after a run to inspect the output.
+
+When reading the dashboard, treat a "good" result primarily as a relative one: stronger finishing performance and/or faster improvement than peer models under the same protocol. The page should make that clear without requiring a deep read of the methodology document.
 
 ---
 

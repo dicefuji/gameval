@@ -17,6 +17,7 @@
     .section { margin-bottom: 1rem; }
     .grid { display: grid; gap: 16px; }
     .summary-grid { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+    .verdict-grid { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
     .detail-grid { grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.9fr); align-items: start; }
     .panel {
       background: #fff;
@@ -104,6 +105,64 @@
       color: #666;
     }
     .small-note { font-size: 12px; color: #666; margin-top: 8px; }
+    .read-guide {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 10px;
+    }
+    .guide-card {
+      background: #fafafa;
+      border-radius: 10px;
+      padding: 12px;
+    }
+    .guide-card strong {
+      display: block;
+      font-size: 13px;
+      margin-bottom: 4px;
+    }
+    .guide-card p {
+      font-size: 13px;
+      color: #666;
+      line-height: 1.45;
+    }
+    .methodology-note {
+      font-size: 13px;
+      color: #555;
+      line-height: 1.5;
+    }
+    .methodology-note a {
+      color: #555;
+    }
+    .comparison-table-wrap {
+      overflow-x: auto;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    th, td {
+      padding: 10px 8px;
+      border-bottom: 0.5px solid #e6e6e6;
+      text-align: left;
+      white-space: nowrap;
+    }
+    th {
+      font-size: 12px;
+      color: #777;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    tbody tr:last-child td {
+      border-bottom: none;
+    }
+    .section-copy {
+      font-size: 13px;
+      color: #666;
+      margin-bottom: 10px;
+      max-width: 880px;
+    }
     @media (max-width: 900px) {
       .detail-grid { grid-template-columns: 1fr; }
       svg { min-width: 640px; }
@@ -128,8 +187,73 @@
 
       <div id="content" style="display:none">
         <section class="section panel">
+          <div class="panel-title">How To Read This Run</div>
+          <div class="read-guide">
+            <div class="guide-card">
+              <strong>What counts as a good result?</strong>
+              <p>A strong model either finishes with a better score than its peers, improves faster across iterations, or both under the same protocol.</p>
+            </div>
+            <div class="guide-card">
+              <strong>Why trust the comparison?</strong>
+              <p>All models in this run are judged under the same shared setup: same baseline opponents, same iteration budget, and the same scoring loop.</p>
+            </div>
+            <div class="guide-card">
+              <strong>What is the main signal?</strong>
+              <p>The learning curve is primary. Final score matters, but how a model improves after feedback is the benchmark’s core capability signal.</p>
+            </div>
+            <div class="guide-card">
+              <strong>What is secondary?</strong>
+              <p>The arena replay is a follow-on inspection tool. Use it after you understand the benchmark result, not instead of it.</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="section panel">
+          <div class="panel-title">What This Benchmark Measures</div>
+          <p class="methodology-note">
+            Arena War measures <strong>iterative algorithm improvement under adversarial pressure</strong>: a model must read the task, write code, learn from reward signals, and produce stronger follow-up algorithms over repeated rounds. It does <strong>not</strong> claim to measure general coding ability from one chart. Cross-model comparison is meaningful here because the protocol is shared across the run. For deeper methodology, see <a href="benchmark-methodology.md" target="_blank" rel="noopener noreferrer">`benchmark-methodology.md`</a>.
+          </p>
+        </section>
+
+        <section class="section panel">
           <div class="panel-title">Benchmark Summary</div>
+          <p class="section-copy">Use this row as the top-line read: who finished strongest, how many models were compared, and how much benchmark evidence this run contains.</p>
           <div id="summary-grid" class="grid summary-grid"></div>
+        </section>
+
+        <section class="section panel">
+          <div class="panel-title">Comparison Verdict</div>
+          <p class="section-copy">A good result is primarily relative: stronger final performance and faster improvement than peers on the same run.</p>
+          <div id="verdict-grid" class="grid verdict-grid"></div>
+        </section>
+
+        <section class="section panel">
+          <div class="panel-title">Shared Protocol</div>
+          <p class="section-copy">This strip explains why the comparison is apples-to-apples. Every model shown below was evaluated under this same run configuration.</p>
+          <div id="protocol-grid" class="grid summary-grid"></div>
+        </section>
+
+        <section class="section panel">
+          <div class="panel-title">Model Comparison Table</div>
+          <p class="section-copy">Read this before drilling into individual iterations. It shows who finished best, who improved most, and how each run ended.</p>
+          <div class="comparison-table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Rank</th>
+                  <th>Model</th>
+                  <th>Best score</th>
+                  <th>Best iteration</th>
+                  <th>Latest score</th>
+                  <th>Net improvement</th>
+                  <th>Successful iterations</th>
+                  <th>Stop reason</th>
+                </tr>
+              </thead>
+              <tbody id="comparison-table-body"></tbody>
+            </table>
+          </div>
+          <p class="small-note">Ranking is ordered by strongest best result first. Ties fall to the earlier best iteration.</p>
         </section>
 
         <section class="section panel">
@@ -138,7 +262,7 @@
             <svg id="learning-curve" viewBox="0 0 900 300" preserveAspectRatio="xMidYMid meet"></svg>
           </div>
           <div id="chart-legend" class="chart-legend"></div>
-          <p class="small-note">Each line shows average territory percentage by eval iteration for one model.</p>
+          <p class="small-note">Each line shows mean territory percentage by eval iteration for one model. The main read is relative trajectory: who improves fastest and who ends strongest.</p>
         </section>
 
         <section class="section panel">
@@ -166,15 +290,15 @@
               <div class="panel-title">Iteration Feedback</div>
               <div id="iteration-meta" class="meta-list"></div>
               <div style="margin-top:14px">
-                <div class="panel-title">Reward Signals</div>
+                <div class="panel-title">Feedback Signals Used In The Next Prompt</div>
                 <div id="reward-signals" class="chip-row"></div>
               </div>
               <div style="margin-top:14px">
-                <div class="panel-title">Prompt Leaderboard Snapshot</div>
+                <div class="panel-title">Same-Model Feedback Leaderboard</div>
                 <div id="leaderboard-snapshot" class="leaderboard-list"></div>
               </div>
               <div style="margin-top:14px">
-                <div class="panel-title">Recent Run History</div>
+                <div class="panel-title">Same-Model Feedback History</div>
                 <div id="history-snapshot" class="history-list"></div>
               </div>
             </div>
@@ -190,10 +314,11 @@
               <div class="panel-title">Representative Board Snapshot</div>
               <canvas id="snapshot-canvas" width="320" height="320"></canvas>
               <div id="snapshot-meta" class="meta-list" style="margin-top:12px"></div>
+              <p class="small-note">This snapshot is a representative game from the selected eval iteration, chosen to sit closest to that iteration’s mean score.</p>
             </div>
 
             <div class="panel">
-              <div class="panel-title">Follow-On Comparison</div>
+              <div class="panel-title">Best-Vs-Best Replay Candidates</div>
               <div id="follow-on" class="leaderboard-list"></div>
               <p class="small-note">
                 The benchmark comes first. After reviewing the leaderboard and best iterations here, use the sandbox arena to replay the strongest algorithms against each other.

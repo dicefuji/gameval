@@ -13,6 +13,9 @@
   const emptyState = document.getElementById('empty-state');
   const content = document.getElementById('content');
   const summaryGrid = document.getElementById('summary-grid');
+  const verdictGrid = document.getElementById('verdict-grid');
+  const protocolGrid = document.getElementById('protocol-grid');
+  const comparisonTableBody = document.getElementById('comparison-table-body');
   const learningCurve = document.getElementById('learning-curve');
   const chartLegend = document.getElementById('chart-legend');
   const modelSelect = document.getElementById('model-select');
@@ -68,6 +71,70 @@
         <strong>${escapeHtml(right)}</strong>
       </div>
     `;
+  }
+
+  function successfulIterationsFor(modelResult) {
+    return modelResult.iterations.filter(iter => !iter.error && typeof iter.avgPct === 'number');
+  }
+
+  function normalizeComparisonEntry(modelName) {
+    const modelResult = state.results.models[modelName];
+    const successfulIterations = successfulIterationsFor(modelResult);
+    const firstIteration = successfulIterations[0] || null;
+    const latestIteration = successfulIterations[successfulIterations.length - 1] || null;
+    const bestIteration = modelResult.summary.bestIteration || null;
+    const latestAvgPct = modelResult.summary.latestIteration?.avgPct ?? latestIteration?.avgPct ?? null;
+    const firstAvgPct = firstIteration?.avgPct ?? null;
+    const netImprovement = (firstAvgPct == null || latestAvgPct == null) ? null : latestAvgPct - firstAvgPct;
+    const peakGain = (firstAvgPct == null || bestIteration?.avgPct == null) ? null : bestIteration.avgPct - firstAvgPct;
+    const improvementRate = (netImprovement == null || successfulIterations.length <= 1)
+      ? null
+      : netImprovement / (successfulIterations.length - 1);
+
+    return {
+      model: modelName,
+      successfulIterations,
+      firstIteration,
+      latestIteration: modelResult.summary.latestIteration || latestIteration,
+      bestIteration,
+      firstAvgPct,
+      latestAvgPct,
+      bestAvgPct: modelResult.summary.bestIteration?.avgPct ?? null,
+      netImprovement,
+      peakGain,
+      improvementRate,
+      stopReason: modelResult.summary.stopReason || 'n/a',
+      completedIterations: modelResult.summary.successfulIterations || successfulIterations.length,
+      modelResult,
+    };
+  }
+
+  function allComparisonEntries() {
+    return state.modelKeys.map(normalizeComparisonEntry);
+  }
+
+  function formatPercentDelta(value) {
+    if (value == null || Number.isNaN(value)) return 'n/a';
+    return `${value > 0 ? '+' : ''}${Math.round(value * 10) / 10}%`;
+  }
+
+  function formatPerIteration(value) {
+    if (value == null || Number.isNaN(value)) return 'n/a';
+    return `${value > 0 ? '+' : ''}${(Math.round(value * 10) / 10).toFixed(1)} pts/iter`;
+  }
+
+  function formatStopReason(reason) {
+    if (!reason) return 'n/a';
+    return reason
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, char => char.toUpperCase());
+  }
+
+  function formatDate(value) {
+    if (!value) return 'n/a';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+    return date.toLocaleString();
   }
 
   function normalizeLegacyResults(raw) {
@@ -194,6 +261,9 @@
     content.style.display = 'block';
 
     renderSummary();
+    renderVerdicts();
+    renderProtocol();
+    renderComparisonTable();
     renderChart();
     renderSelectors();
     renderSelectedRun();
@@ -208,15 +278,73 @@
       return sum + (state.results.models[key].summary.successfulIterations || 0);
     }, 0);
     const protocol = state.results.protocol || {};
+    const protocolLabel = protocol.comparisonMode ? protocol.comparisonMode.replace(/_/g, ' ') : 'n/a';
 
     summaryGrid.innerHTML = [
-      metricCard(bestOverall ? `${bestOverall.model} (${bestOverall.bestAvgPct}%)` : 'n/a', 'Best overall result'),
+      metricCard(bestOverall ? `${bestOverall.model} (${bestOverall.bestAvgPct}%)` : 'n/a', 'Best peak result'),
       metricCard(totalModels, 'Models compared'),
       metricCard(totalIterations, 'Successful eval iterations'),
-      metricCard(protocol.maxIterations || 'n/a', 'Target iterations per model'),
+      metricCard(protocol.maxIterations || 'n/a', 'Target eval iterations'),
       metricCard(protocol.gamesPerIter || 'n/a', 'Games per iteration'),
-      metricCard(protocol.plateauPatience || 'n/a', 'Plateau patience'),
+      metricCard(protocolLabel, 'Comparison mode'),
     ].join('');
+  }
+
+  function renderVerdicts() {
+    const entries = allComparisonEntries();
+    const bestFinisher = [...entries].sort((a, b) => {
+      if ((b.bestAvgPct ?? -Infinity) !== (a.bestAvgPct ?? -Infinity)) {
+        return (b.bestAvgPct ?? -Infinity) - (a.bestAvgPct ?? -Infinity);
+      }
+      return (a.bestIteration?.iter ?? Number.MAX_SAFE_INTEGER) - (b.bestIteration?.iter ?? Number.MAX_SAFE_INTEGER);
+    })[0];
+    const strongestLatest = [...entries].sort((a, b) => (b.latestAvgPct ?? -Infinity) - (a.latestAvgPct ?? -Infinity))[0];
+    const fastestImprover = [...entries].sort((a, b) => (b.improvementRate ?? -Infinity) - (a.improvementRate ?? -Infinity))[0];
+
+    verdictGrid.innerHTML = [
+      metricCard(
+        bestFinisher ? `${bestFinisher.model} (${bestFinisher.bestAvgPct}%)` : 'n/a',
+        bestFinisher ? `Best finisher at iter ${bestFinisher.bestIteration?.iter ?? 'n/a'}` : 'Best finisher'
+      ),
+      metricCard(
+        strongestLatest ? `${strongestLatest.model} (${strongestLatest.latestAvgPct}%)` : 'n/a',
+        'Strongest latest result'
+      ),
+      metricCard(
+        fastestImprover ? `${fastestImprover.model} (${formatPerIteration(fastestImprover.improvementRate)})` : 'n/a',
+        'Fastest improver across the run'
+      ),
+    ].join('');
+  }
+
+  function renderProtocol() {
+    const protocol = state.results.protocol || {};
+    protocolGrid.innerHTML = [
+      metaItem('Run timestamp', formatDate(state.results.generatedAt)),
+      metaItem('Eval schema version', state.results.schemaVersion ?? 'n/a'),
+      metaItem('Grid size', protocol.gridSize ?? 'n/a'),
+      metaItem('Player count', protocol.nPlayers ?? 'n/a'),
+      metaItem('Games per iteration', protocol.gamesPerIter ?? 'n/a'),
+      metaItem('Target iterations', protocol.maxIterations ?? 'n/a'),
+      metaItem('Plateau policy', protocol.plateauPatience == null ? 'n/a' : `${protocol.plateauPatience} rounds, ${protocol.plateauMinImprovement ?? 'n/a'}% min gain`),
+      metaItem('Baseline opponents', Array.isArray(protocol.baselineOpponents) && protocol.baselineOpponents.length ? protocol.baselineOpponents.join(', ') : 'n/a'),
+    ].join('');
+  }
+
+  function renderComparisonTable() {
+    const entries = allComparisonEntries();
+    comparisonTableBody.innerHTML = entries.map((entry, index) => `
+      <tr>
+        <td>${index + 1}</td>
+        <td>${escapeHtml(entry.model)}</td>
+        <td>${escapeHtml(entry.bestAvgPct == null ? 'n/a' : `${entry.bestAvgPct}%`)}</td>
+        <td>${escapeHtml(entry.bestIteration?.iter ?? 'n/a')}</td>
+        <td>${escapeHtml(entry.latestAvgPct == null ? 'n/a' : `${entry.latestAvgPct}%`)}</td>
+        <td>${escapeHtml(formatPercentDelta(entry.netImprovement))}</td>
+        <td>${escapeHtml(entry.completedIterations)}</td>
+        <td>${escapeHtml(formatStopReason(entry.stopReason))}</td>
+      </tr>
+    `).join('');
   }
 
   function renderChart() {
@@ -283,10 +411,11 @@
 
     chartLegend.innerHTML = state.results.rankings.map((entry, index) => {
       const color = COLORS[index % COLORS.length];
+      const comparison = normalizeComparisonEntry(entry.model);
       return `
         <div class="legend-item">
           <span class="legend-swatch" style="background:${color}"></span>
-          <span>${escapeHtml(entry.model)} · best ${escapeHtml(entry.bestAvgPct)}%</span>
+          <span>${escapeHtml(entry.model)} · best ${escapeHtml(entry.bestAvgPct)}% · net ${escapeHtml(formatPercentDelta(comparison.netImprovement))}</span>
         </div>
       `;
     }).join('');
@@ -298,9 +427,9 @@
     }).join('');
 
     const modelResult = state.results.models[state.selectedModel];
-    const successfulIterations = modelResult.iterations.filter(iter => !iter.error);
+    const successfulIterations = successfulIterationsFor(modelResult);
     iterationSelect.innerHTML = successfulIterations.map(iter => {
-      const label = `Iter ${iter.iter} · ${iter.avgPct}% · ${iter.algoName}`;
+      const label = `Eval iter ${iter.iter} · ${iter.avgPct}% · ${iter.algoName}`;
       return `<option value="${iter.iter}"${iter.iter === state.selectedIteration ? ' selected' : ''}>${escapeHtml(label)}</option>`;
     }).join('');
 
@@ -319,16 +448,19 @@
 
   function renderSelectedRun() {
     const modelResult = state.results.models[state.selectedModel];
+    const comparison = normalizeComparisonEntry(state.selectedModel);
     const selectedIteration = modelResult.iterations.find(iter => iter.iter === state.selectedIteration && !iter.error)
       || modelResult.iterations.find(iter => !iter.error)
       || null;
 
     modelSummary.innerHTML = [
       metaItem('Model', modelResult.model),
-      metaItem('Best result', modelResult.summary.bestIteration ? `${modelResult.summary.bestIteration.avgPct}% at iter ${modelResult.summary.bestIteration.iter}` : 'n/a'),
-      metaItem('Latest result', modelResult.summary.latestIteration ? `${modelResult.summary.latestIteration.avgPct}% at iter ${modelResult.summary.latestIteration.iter}` : 'n/a'),
-      metaItem('Completed iterations', modelResult.summary.successfulIterations),
-      metaItem('Stop reason', modelResult.summary.stopReason || 'n/a'),
+      metaItem('Best peak result', modelResult.summary.bestIteration ? `${modelResult.summary.bestIteration.avgPct}% at eval iter ${modelResult.summary.bestIteration.iter}` : 'n/a'),
+      metaItem('Latest result', modelResult.summary.latestIteration ? `${modelResult.summary.latestIteration.avgPct}% at eval iter ${modelResult.summary.latestIteration.iter}` : 'n/a'),
+      metaItem('Net improvement', formatPercentDelta(comparison.netImprovement)),
+      metaItem('Improvement rate', formatPerIteration(comparison.improvementRate)),
+      metaItem('Completed eval iterations', modelResult.summary.successfulIterations),
+      metaItem('Stop reason', formatStopReason(modelResult.summary.stopReason || 'n/a')),
       metaItem('Baselines', (modelResult.summary.baselineOpponents || []).join(', ') || 'n/a'),
     ].join('');
 
@@ -344,27 +476,27 @@
     }
 
     iterationMeta.innerHTML = [
-      metaItem('Iteration', selectedIteration.iter),
+      metaItem('Eval iteration', selectedIteration.iter),
       metaItem('Prompt mode', selectedIteration.promptMode || 'n/a'),
-      metaItem('Average territory', `${selectedIteration.avgPct}%`),
-      metaItem('Average ticks', selectedIteration.avgTicks ?? 'n/a'),
-      metaItem('Delta vs last', selectedIteration.improvementFromLastIter == null ? 'n/a' : `${selectedIteration.improvementFromLastIter > 0 ? '+' : ''}${selectedIteration.improvementFromLastIter}%`),
-      metaItem('Delta vs best before', selectedIteration.improvementFromBestBeforeIter == null ? 'n/a' : `${selectedIteration.improvementFromBestBeforeIter > 0 ? '+' : ''}${selectedIteration.improvementFromBestBeforeIter}%`),
+      metaItem('Mean territory', `${selectedIteration.avgPct}%`),
+      metaItem('Mean ticks', selectedIteration.avgTicks ?? 'n/a'),
+      metaItem('Delta vs previous eval iteration', formatPercentDelta(selectedIteration.improvementFromLastIter)),
+      metaItem('Delta vs same-model best before this iteration', formatPercentDelta(selectedIteration.improvementFromBestBeforeIter)),
     ].join('');
 
     rewardSignals.innerHTML = (selectedIteration.promptFeedback?.rewardSignals || []).length
       ? selectedIteration.promptFeedback.rewardSignals.map(signal => `<span class="chip">${escapeHtml(signal)}</span>`).join('')
-      : '<span class="chip">first round, no prior reward signals</span>';
+      : '<span class="chip">First eval round: no prior feedback signals yet</span>';
 
     const leaderboard = selectedIteration.promptFeedback?.leaderboard || [];
     leaderboardSnapshot.innerHTML = leaderboard.length
       ? leaderboard.map(entry => listRow(`${entry.name}`, `${entry.avgPct}% over ${entry.runs} runs`)).join('')
-      : listRow('No prior leaderboard yet', selectedIteration.promptMode === 'baseline' ? 'baseline round' : 'n/a');
+      : listRow('No same-model leaderboard yet', selectedIteration.promptMode === 'baseline' ? 'baseline eval round' : 'n/a');
 
     const history = selectedIteration.promptFeedback?.recentHistory || [];
     historySnapshot.innerHTML = history.length
-      ? history.map(entry => listRow(`Iter ${entry.iter}: ${entry.algoName}`, `${entry.avgPct}% in ${entry.ticks} ticks`)).join('')
-      : listRow('No recent history yet', selectedIteration.promptMode === 'baseline' ? 'baseline round' : 'n/a');
+      ? history.map(entry => listRow(`Eval iter ${entry.iter}: ${entry.algoName}`, `${entry.avgPct}% in ${entry.ticks} ticks`)).join('')
+      : listRow('No same-model history yet', selectedIteration.promptMode === 'baseline' ? 'baseline eval round' : 'n/a');
 
     codeViewer.textContent = selectedIteration.rawCode || '// no generated code captured';
 
@@ -373,11 +505,11 @@
         metaItem('Representative game', `#${selectedIteration.representativeGame.gameNumber}`),
         metaItem('Territory', `${selectedIteration.representativeGame.pct}%`),
         metaItem('Ticks', selectedIteration.representativeGame.ticks),
-        metaItem('Winner slot', `Player ${selectedIteration.representativeGame.winnerIndex + 1}`),
+        metaItem('Winning player slot', `Player ${selectedIteration.representativeGame.winnerIndex + 1}`),
       ].join('');
       drawGrid(selectedIteration.representativeGame.finalGrid);
     } else {
-      snapshotMeta.innerHTML = metaItem('Snapshot', 'Not available in this result file');
+      snapshotMeta.innerHTML = metaItem('Snapshot evidence', 'Not available in this result file');
       drawGrid(null);
     }
   }
