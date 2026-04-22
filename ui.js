@@ -3,7 +3,7 @@
  *
  * UI controller for Arena War.
  * Handles canvas rendering, control bindings, stats display,
- * iteration history, and the model algorithm injection panel.
+ * game history, and the model algorithm injection panel.
  *
  * Depends on: algorithms.js (ALGOS, ALGO_NAMES), engine.js (ArenaEngine)
  */
@@ -118,13 +118,13 @@
     }
   }
 
-  // ─── Iteration history ─────────────────────────────────────────────────────
+  // ─── Game history ──────────────────────────────────────────────────────────
   function logHistory(result) {
     const { scores, totalCells, tick } = result;
     const winnerIdx = scores.indexOf(Math.max(...scores));
     const entry = document.createElement('div');
     entry.className = 'hist-item';
-    entry.textContent = `iter ${history.length + 1} · ${tick} ticks · ${ALGO_NAMES[winnerIdx % ALGO_NAMES.length]} wins (${Math.round((scores[winnerIdx] / totalCells) * 100)}%)`;
+    entry.textContent = `game ${history.length + 1} · ${tick} ticks · ${ALGO_NAMES[winnerIdx % ALGO_NAMES.length]} wins (${Math.round((scores[winnerIdx] / totalCells) * 100)}%)`;
     histList.prepend(entry);
     history.push({ tick, winnerIdx, scores: [...scores], totalCells });
   }

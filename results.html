@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Arena War — Results Dashboard</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #f5f4f0; color: #1a1a1a; }
+    #root { max-width: 1160px; margin: 0 auto; padding: 1.25rem; }
+    h1 { font-size: 26px; font-weight: 600; margin-bottom: 0.4rem; }
+    p { line-height: 1.5; }
+    .subhead { color: #666; max-width: 820px; margin-bottom: 0.85rem; }
+    .page-links { display: flex; gap: 12px; margin-bottom: 1.25rem; flex-wrap: wrap; }
+    .page-links a { color: #666; text-decoration: none; font-size: 13px; }
+    .page-links a:hover { text-decoration: underline; }
+    .section { margin-bottom: 1rem; }
+    .grid { display: grid; gap: 16px; }
+    .summary-grid { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+    .detail-grid { grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.9fr); align-items: start; }
+    .panel {
+      background: #fff;
+      border: 0.5px solid #ddd;
+      border-radius: 12px;
+      padding: 14px;
+    }
+    .panel-title {
+      font-size: 11px;
+      font-weight: 600;
+      color: #888;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 10px;
+    }
+    .metric-value { font-size: 24px; font-weight: 600; margin-bottom: 4px; }
+    .metric-label { font-size: 12px; color: #666; }
+    .toolbar { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+    .toolbar label { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: #666; }
+    select {
+      min-width: 210px;
+      border: 0.5px solid #ccc;
+      border-radius: 8px;
+      background: #fff;
+      padding: 8px 10px;
+      font-size: 13px;
+      color: #1a1a1a;
+    }
+    .meta-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
+    .meta-item { background: #fafafa; border-radius: 10px; padding: 10px; }
+    .meta-item strong { display: block; font-size: 12px; color: #666; margin-bottom: 4px; }
+    .meta-item span { font-size: 14px; }
+    .chip-row { display: flex; flex-wrap: wrap; gap: 8px; }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      padding: 5px 8px;
+      border-radius: 999px;
+      background: #f0f0f0;
+      color: #444;
+      font-size: 12px;
+    }
+    .leaderboard-list,
+    .history-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .list-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      font-size: 13px;
+      padding: 8px 10px;
+      background: #fafafa;
+      border-radius: 8px;
+    }
+    .chart-wrap { overflow-x: auto; }
+    svg { display: block; width: 100%; min-width: 760px; height: 300px; }
+    .chart-legend { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 10px; }
+    .legend-item { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: #666; }
+    .legend-swatch { width: 10px; height: 10px; border-radius: 999px; }
+    canvas {
+      display: block;
+      width: 100%;
+      border: 0.5px solid #ddd;
+      border-radius: 10px;
+      background: #f7f7f7;
+    }
+    pre {
+      max-height: 420px;
+      overflow: auto;
+      padding: 12px;
+      border-radius: 10px;
+      background: #111;
+      color: #f3f3f3;
+      font-size: 12px;
+      line-height: 1.45;
+    }
+    .empty-state {
+      padding: 28px;
+      border-radius: 12px;
+      border: 0.5px dashed #cfcfcf;
+      background: rgba(255, 255, 255, 0.65);
+      color: #666;
+    }
+    .small-note { font-size: 12px; color: #666; margin-top: 8px; }
+    @media (max-width: 900px) {
+      .detail-grid { grid-template-columns: 1fr; }
+      svg { min-width: 640px; }
+    }
+  </style>
+</head>
+<body>
+  <div id="root">
+    <h1>arena war — results dashboard</h1>
+    <p class="subhead">
+      Compare how recent models perform on the same iterative Arena War eval: initial algorithm quality, learning curve over repeated feedback, best final result, and representative board snapshots.
+    </p>
+    <div class="page-links">
+      <a href="results.html">results dashboard</a>
+      <a href="arena.html">arena sandbox</a>
+    </div>
+
+    <div id="dashboard">
+      <div id="empty-state" class="empty-state">
+        Loading `eval-results.json`...
+      </div>
+
+      <div id="content" style="display:none">
+        <section class="section panel">
+          <div class="panel-title">Benchmark Summary</div>
+          <div id="summary-grid" class="grid summary-grid"></div>
+        </section>
+
+        <section class="section panel">
+          <div class="panel-title">Learning Curves</div>
+          <div class="chart-wrap">
+            <svg id="learning-curve" viewBox="0 0 900 300" preserveAspectRatio="xMidYMid meet"></svg>
+          </div>
+          <div id="chart-legend" class="chart-legend"></div>
+          <p class="small-note">Each line shows average territory percentage by eval iteration for one model.</p>
+        </section>
+
+        <section class="section panel">
+          <div class="panel-title">Inspect A Model Run</div>
+          <div class="toolbar">
+            <label>
+              Model
+              <select id="model-select"></select>
+            </label>
+            <label>
+              Iteration
+              <select id="iteration-select"></select>
+            </label>
+          </div>
+        </section>
+
+        <section class="section grid detail-grid">
+          <div class="grid" style="gap:16px">
+            <div class="panel">
+              <div class="panel-title">Model Summary</div>
+              <div id="model-summary" class="meta-list"></div>
+            </div>
+
+            <div class="panel">
+              <div class="panel-title">Iteration Feedback</div>
+              <div id="iteration-meta" class="meta-list"></div>
+              <div style="margin-top:14px">
+                <div class="panel-title">Reward Signals</div>
+                <div id="reward-signals" class="chip-row"></div>
+              </div>
+              <div style="margin-top:14px">
+                <div class="panel-title">Prompt Leaderboard Snapshot</div>
+                <div id="leaderboard-snapshot" class="leaderboard-list"></div>
+              </div>
+              <div style="margin-top:14px">
+                <div class="panel-title">Recent Run History</div>
+                <div id="history-snapshot" class="history-list"></div>
+              </div>
+            </div>
+
+            <div class="panel">
+              <div class="panel-title">Generated Algorithm</div>
+              <pre id="code-viewer"></pre>
+            </div>
+          </div>
+
+          <div class="grid" style="gap:16px">
+            <div class="panel">
+              <div class="panel-title">Representative Board Snapshot</div>
+              <canvas id="snapshot-canvas" width="320" height="320"></canvas>
+              <div id="snapshot-meta" class="meta-list" style="margin-top:12px"></div>
+            </div>
+
+            <div class="panel">
+              <div class="panel-title">Follow-On Comparison</div>
+              <div id="follow-on" class="leaderboard-list"></div>
+              <p class="small-note">
+                The benchmark comes first. After reviewing the leaderboard and best iterations here, use the sandbox arena to replay the strongest algorithms against each other.
+              </p>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <script src="results.js"></script>
+</body>
+</html>

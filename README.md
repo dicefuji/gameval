@@ -1,218 +1,185 @@
 # gameval
 
-# Arena War — LLM Coding Eval
+# Arena War — Model Comparison Eval
 
-A spatial territory-capture eval that measures LLM coding capability under adversarial, iterative pressure. Models write JavaScript algorithms that compete to claim pixels in a circular arena. The eval loop feeds each model the current winning algorithm and asks it to do better — measuring how quickly and how well models improve under competition.
+Arena War is an iterative coding benchmark for comparing recent models on the same adversarial task. Each model receives one starting prompt, writes a JavaScript territory-capture algorithm, gets tested headlessly against a shared set of opponents, sees the reward signals from that round, and then tries again. The result is a live, inspectable learning curve that shows which models improve fastest and which models finish strongest.
+
+The core story is not a single model solving a fixed puzzle. The core story is: run the same protocol across multiple models, let each one iterate for 5-6 rounds or until it plateaus, then compare how they actually perform on the Arena War eval.
 
 ---
 
-## What This Evaluates
+## Product Goal
 
-Standard coding evals ask a model to solve a fixed problem. Arena War is different: the target moves. Each iteration, the model sees what the current best algorithm does and must reason about its weaknesses, then write code that exploits them. This tests:
+The goal of this project is to make it obvious how the newest models perform on a game-like coding eval:
 
-- **Spatial reasoning** — understanding how territory shapes affect expansion strategy
-- **Adversarial thinking** — recognizing and exploiting opponent strategies
-- **Iterative improvement** — does the model actually get better with feedback, and how fast?
-- **Code quality** — does the generated algorithm run correctly, efficiently, and within constraints?
+- which model produces the strongest first algorithm
+- which model improves fastest after feedback
+- which model reaches the highest final territory share
+- what each iteration's algorithm actually looked like
+- how the strongest models should be replayed against each other after the benchmark is complete
 
-The output is a learning curve per model — not just a pass/fail score — which is a richer capability signal than single-shot evals.
+The primary benchmark is **per-model comparison under the same protocol**. Direct head-to-head model-vs-model matches are a follow-on layer built on top of those benchmark results.
+
+---
+
+## The Benchmark Loop
+
+Each model goes through the same loop:
+
+1. Start with one prompt that explains Arena War and the function signature.
+2. The model returns a JavaScript algorithm.
+3. The eval runner tests that algorithm in several headless games against the same shared baseline opponents.
+4. The results dashboard shows the scores, learning curve, representative board state, and generated source code.
+5. The next prompt feeds reward signals back to the model: leaderboard position, current best code, and recent game history.
+6. Repeat for roughly 5-6 iterations, or stop early once improvement has saturated.
+
+That loop measures both raw coding ability and iterative learning ability. The output is not just a final score. It is a trace of how a model adapts under repeated competitive pressure.
+
+---
+
+## Reward Signals
+
+The runner feeds structured feedback back into later rounds instead of asking the model to restart from scratch every time. The key reward signals are:
+
+- average territory percentage across the evaluation games for that iteration
+- recent leaderboard standing inside the current model's run
+- the current winning algorithm source code
+- recent game history, including territory share and tick count
+- plateau detection, which decides when more rounds are no longer meaningfully improving the score
+
+This is why Arena War is an iterative eval rather than a one-shot benchmark.
+
+---
+
+## What Users Should See
+
+There are two frontend surfaces:
+
+- `results.html` is the main product surface. It should answer: who improved fastest, who finished best, what code did they write, and what did their boards look like?
+- `arena.html` is the sandbox and replay surface. It is useful for manual inspection, live playback ideas, and future best-vs-best comparisons.
+
+The benchmark-first workflow is:
+
+1. run the iterative eval for multiple models
+2. write the structured results to `eval-results.json`
+3. open `results.html`
+4. compare learning curves, inspect iteration outputs, and review representative boards
+5. only then move into best-vs-best replays in the arena
 
 ---
 
 ## Project Structure
 
 ```
-arena-war/
-├── arena.html          — browser frontend (visual arena + live stats)
-├── algorithms.js       — built-in baseline algorithms (8 strategies)
-├── engine.js           — core game engine (grid, tick logic, scoring)
-├── ui.js               — UI controller (canvas rendering, controls, injection)
-├── prompts.js          — prompt templates for the eval loop
-├── eval-runner.js      — Node.js headless eval harness
+.
+├── AGENTS.md           — persistent repo notes for future agent sessions
+├── algorithms.js       — built-in baseline strategies
+├── arena.html          — interactive sandbox arena
+├── engine.js           — browser game engine
+├── eval-runner.js      — headless multi-model eval harness
 ├── package.json
-├── eval-results.json   — written by eval-runner after each run
+├── prompts.js          — prompt templates and iterative feedback wording
+├── results.html        — results dashboard shell
+├── results.js          — results dashboard logic
+├── ui.js               — sandbox UI controller
+├── eval-results.json   — local eval output written by the runner
 └── README.md
 ```
 
 ---
 
-## File Descriptions
-
-### `arena.html`
-The browser-based live frontend. Open this in any browser to watch games play out in real time. Contains:
-- Circular pixel grid rendered on a `<canvas>`
-- Variable player count (2–6) and grid size (40/60/80)
-- Speed control (1–20 ticks/sec)
-- Territory % bars updating live each tick
-- Iteration history log
-- **Algorithm injection panel** — paste any model-generated JS function directly into a player slot and watch it compete live
-
-No build step required. Open directly or serve with `npm run serve`.
-
-### `algorithms.js`
-The registry of built-in baseline algorithms. Each algorithm is a named JS function:
-
-```js
-function myAlgo(id, grid, size) {
-  const EMPTY = -1;
-  // ... strategy logic
-  return [[row1, col1], [row2, col2], ...]; // prioritized claim list
-}
-```
-
-The 8 included baselines range from naive BFS to density-weighted and centroid-aware strategies. These serve as the competitive baseline pool that model-generated algorithms must beat.
-
-**This is also where model-generated algorithms are stored between eval runs.** When a model produces a winning algorithm, it gets added here so future iterations compete against it.
-
-### `engine.js`
-The game engine. Manages:
-- Circular mask generation (only pixels inside the circle are valid)
-- Grid initialization with evenly-spaced starting seeds
-- Per-tick claim resolution, including conflict detection (two players want the same cell → nobody gets it)
-- Win/termination detection
-- `replaceAlgorithm(slot, fn)` — hot-swap an algorithm mid-session
-
-The engine passes a **copy** of the grid to each algorithm per tick, so algorithms cannot modify shared state.
-
-### `ui.js`
-Wires the engine to the browser DOM. Handles:
-- Canvas rendering (pixel grid at up to 10px per cell)
-- Live territory stats panel
-- Start/Pause/Reset controls
-- Speed slider
-- Iteration history log
-- Safe `eval`-based injection of model-generated code from the textarea
-
-### `prompts.js`
-The prompt templates used by the eval runner. Two modes:
-- `BASELINE_PROMPT` — first iteration, model writes from scratch
-- `buildIterativePrompt({...})` — subsequent iterations, model sees the leaderboard, the winning algorithm's source code, and recent game history
-
-The prompts include the full game rules, function signature, constraints, and strategic hints. They are designed to elicit code-only responses (no markdown, no explanation).
+## File Guide
 
 ### `eval-runner.js`
-The headless Node.js eval harness. This is the core of the eval system. It:
-1. Calls the Anthropic API with the current prompt
-2. Extracts the returned JS function from the model's response
-3. Runs N headless games (no browser, pure JS) with the model's algorithm as player 0 and baselines filling the remaining slots
-4. Records scores, tick counts, and win rates
-5. Updates the leaderboard and selects the new winner for the next iteration
-6. Repeats for `--iterations` rounds
-7. Writes `eval-results.json` with the full run history
+Runs the actual benchmark loop. It is responsible for:
+
+1. prompting one or more models
+2. extracting algorithm functions from model output
+3. testing each iteration headlessly
+4. recording reward signals and learning curves
+5. stopping when the run hits the iteration cap or plateaus
+6. writing a comparison-friendly `eval-results.json`
+
+### `prompts.js`
+Defines the first-round prompt and the iterative prompt. Later prompts reuse the current leader, leaderboard, and recent game history so that models can improve based on what they learned.
+
+### `results.html` and `results.js`
+Read `eval-results.json` and present the benchmark as a comparison product: learning curves, per-iteration inspection, representative board snapshots, and final model rankings.
+
+### `arena.html`, `engine.js`, and `ui.js`
+Provide the manual arena sandbox. This is where algorithms can be watched and inspected directly, and where best-vs-best replay modes can later live.
+
+### `algorithms.js`
+Contains the shared baseline opponents used by the benchmark. These are the fixed strategies that keep the comparison fair across models.
 
 ---
 
 ## Game Rules
 
-- The arena is a circle divided into a SIZE×SIZE pixel grid (default 60×60)
-- Each player starts with a small seed patch, evenly distributed around the circle
-- Each tick, an algorithm returns a prioritized list of `[row, col]` cells it wants to claim
-- A cell can only be claimed if it is `EMPTY` (-1) and **adjacent (4-directional) to a cell the player already owns**
-- Players **cannot claim through enemy territory** — if fully enclosed, they are confined to that boundary
-- If two players claim the same cell in the same tick, the cell stays `EMPTY` (contested)
-- Each player may claim up to `floor(SIZE / 8)` cells per tick
-- The game ends when no empty cells remain or no player makes progress
+- The arena is a circle divided into a `SIZE × SIZE` pixel grid.
+- Each player starts with a small seed patch placed evenly around the circle.
+- On each tick, an algorithm returns a prioritized list of `[row, col]` cells it wants to claim.
+- A cell can only be claimed if it is `EMPTY` (`-1`) and adjacent in 4 directions to territory the player already owns.
+- Algorithms cannot claim through enemy territory.
+- If two players claim the same cell on the same tick, that cell stays empty.
+- Each player may claim up to `floor(SIZE / 8)` cells per tick.
+- The game ends when no empty cells remain or nobody makes progress.
 
 ---
 
-## The Eval Loop
+## Comparison Modes
 
-```
-Iteration 1:
-  → Send BASELINE_PROMPT to model
-  → Model returns algorithm JS function
-  → Run 5 games: model vs. 3 baseline algos
-  → Record avg territory %
+### Primary Mode: Shared-Protocol Benchmark
 
-Iteration 2+:
-  → Send ITERATIVE_PROMPT with leaderboard + winning algo source
-  → Model analyzes weakness, returns improved algorithm
-  → Run 5 games: new model algo vs. baselines (+ previous best model algo)
-  → Record improvement delta
+Every model runs through the same iterative loop against the same shared baselines. This is the main benchmark because it gives a fair, comparable learning curve for each model.
 
-Repeat for N iterations.
-Output: learning curve (% territory per iteration)
-```
+### Follow-On Mode: Best-vs-Best Replay
 
-The key metric is **improvement rate** — how many iterations does it take for a model to meaningfully beat the baseline, and how much does it improve per iteration?
+After the benchmark is complete, the strongest iterations from the top models can be replayed against each other in the arena. This is useful for intuition and storytelling, but it is downstream of the core benchmark rather than a replacement for it.
 
 ---
 
-## Implementation Plan (for Claude Code)
+## Current Direction
 
-The frontend is complete and working. The following work remains:
+The implementation is moving in this order:
 
-### Phase 1 — Wire up eval-runner.js (priority)
-
-1. `npm install` in the repo root
-2. Verify `eval-runner.js` correctly loads `algorithms.js` in Node context (the current `loadBaselineAlgos()` uses a fragile eval — replace with a clean CommonJS export from `algorithms.js`)
-3. Add `module.exports = { ALGOS, ALGO_NAMES }` to `algorithms.js`
-4. Update `eval-runner.js` to `const { ALGOS, ALGO_NAMES } = require('./algorithms')`
-5. Test with `npm run eval:quick` (3 iterations, 3 games each)
-
-### Phase 2 — Multi-model comparison
-
-Extend `eval-runner.js` to accept multiple `--model` flags and run the full eval loop for each model in sequence. Write results per-model to `eval-results.json` under a keyed structure:
-
-```json
-{
-  "claude-sonnet-4-20250514": { "iterations": [...] },
-  "gpt-4o": { "iterations": [...] }
-}
-```
-
-### Phase 3 — Results visualization
-
-Add `src/results.html` — a second browser page that reads `eval-results.json` and renders:
-- Learning curve chart (territory % per iteration, one line per model)
-- Algorithm source code viewer per iteration
-- Head-to-head comparison: model A's best algo vs. model B's best algo, played live in the arena
-
-### Phase 4 — Algorithm persistence
-
-After each eval run, append the best model-generated algorithm to `algorithms.js` so future runs compete against past best. This creates a true "arms race" environment across multiple eval sessions.
-
-### Phase 5 — Robustness hardening
-
-- Add a sandboxed worker for algorithm execution (prevent infinite loops or DOM access)
-- Add timeout enforcement (50ms per tick per algorithm)
-- Add input validation on the grid copy passed to algorithms
-- Consider running games in a Worker thread to avoid blocking the event loop
-
-### Phase 6 — Extended eval dimensions
-
-Beyond territory %, consider tracking:
-- **Encirclement events** — how often does the model's algo successfully trap an opponent?
-- **Early-game speed** (territory at tick 10) vs. **late-game efficiency** (territory at termination)
-- **Consistency** — variance across games (high variance = brittle strategy)
-- **Prompt sensitivity** — does the model improve more with strategic hints or just code feedback?
+1. benchmark-first README and project framing
+2. multi-model eval output designed for dashboard consumption
+3. results dashboard as the main frontend
+4. arena-based replay and best-vs-best follow-up
+5. robustness hardening such as safer execution and time limits
 
 ---
 
 ## Quick Start
 
 ```bash
-# Install deps
+# Install dependencies
 npm install
 
-# Open frontend in browser
+# Serve the static frontend
 npm run serve
-# → open http://localhost:3000/arena.html
 
-# Run eval (requires ANTHROPIC_API_KEY)
+# Open the main results surface
+# http://localhost:3000/results.html
+
+# Open the arena sandbox
+# http://localhost:3000/arena.html
+
+# Run a quick local benchmark (requires ANTHROPIC_API_KEY)
 export ANTHROPIC_API_KEY=sk-...
 npm run eval:quick
 
-# Full eval
-npm run eval:full
+# Run a multi-model comparison
+npm run eval -- --model claude-sonnet-4-20250514 --model gpt-4o
 ```
+
+The runner writes `eval-results.json` in the repo root. Reload `results.html` after a run to inspect the output.
 
 ---
 
-## Notes for Agent
+## Notes For Future Work
 
-- The frontend (`arena.html` + its three JS files) works as-is — open it in a browser to verify
-- The main work is in `eval-runner.js` — specifically Phase 1 above
-- The `prompts.js` templates are ready but may need tuning based on what model output actually looks like
-- The `extractFunction` utility in `eval-runner.js` is fragile for edge cases — improving it is a good early task
-- All game logic is duplicated between `engine.js` (browser) and `eval-runner.js` (Node) intentionally — consider extracting a shared `game-core.js` that works in both environments
+- Direct best-vs-best model matches should be built on top of the benchmark results rather than replacing the benchmark.
+- The extraction path in `eval-runner.js` still needs ongoing hardening for messy model outputs.
+- The browser engine and the Node runner still duplicate game logic today, so they should stay aligned whenever rules change.

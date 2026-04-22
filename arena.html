@@ -8,7 +8,10 @@
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: system-ui, sans-serif; background: #f5f4f0; color: #1a1a1a; }
     #root { padding: 1rem; max-width: 960px; margin: 0 auto; }
-    h1 { font-size: 18px; font-weight: 500; margin-bottom: 1rem; }
+    h1 { font-size: 18px; font-weight: 500; margin-bottom: 0.35rem; }
+    .page-links { display: flex; gap: 10px; margin-bottom: 1rem; }
+    .page-links a { font-size: 13px; color: #666; text-decoration: none; }
+    .page-links a:hover { text-decoration: underline; }
 
     .top-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 1rem; flex-wrap: wrap; }
     .top-bar label { font-size: 13px; color: #666; }
@@ -78,7 +81,11 @@
 </head>
 <body>
 <div id="root">
-  <h1>arena war — llm eval</h1>
+  <h1>arena war — sandbox arena</h1>
+  <div class="page-links">
+    <a href="results.html">open results dashboard</a>
+    <a href="arena.html">sandbox</a>
+  </div>
 
   <div class="top-bar">
     <label>players</label>
@@ -116,7 +123,7 @@
         <div id="algo-list"></div>
       </div>
       <div class="panel-card">
-        <div class="panel-title">iteration history</div>
+        <div class="panel-title">game history</div>
         <div class="history-list" id="history-list"></div>
       </div>
     </div>

@@ -1,12 +1,12 @@
 {
   "name": "arena-war-eval",
   "version": "0.1.0",
-  "description": "LLM coding eval — adversarial spatial territory capture",
+  "description": "Iterative Arena War benchmark for comparing model performance",
   "main": "eval-runner.js",
   "scripts": {
     "eval": "node eval-runner.js",
     "eval:quick": "node eval-runner.js --iterations 3 --games-per-iter 3",
-    "eval:full": "node eval-runner.js --iterations 15 --games-per-iter 10",
+    "eval:full": "node eval-runner.js --iterations 6 --games-per-iter 5",
     "serve": "python3 -m http.server 3000"
   },
   "dependencies": {

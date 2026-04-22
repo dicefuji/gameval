@@ -6,7 +6,7 @@
  *
  * Two prompt modes:
  *   1. BASELINE — first iteration, no prior algorithms shown
- *   2. ITERATIVE — subsequent iterations, shown the current leaderboard + winning code
+ *   2. ITERATIVE — later iterations receive reward signals from earlier rounds
  *
  * The model's output is expected to be a single JS function matching the signature:
  *   function myAlgorithm(id, grid, size) -> Array<[row, col]>
@@ -36,7 +36,7 @@ Your algorithm must be a named JavaScript function with this exact signature:
 
 Parameters:
   id    {number}     — your player index (0-based)
-  grid  {number[][}} — 2D array [row][col]. Values: -1=EMPTY, null=outside circle, 0..N=owned by player N
+  grid  {number[][]} — 2D array [row][col]. Values: -1=EMPTY, null=outside circle, 0..N=owned by player N
   size  {number}     — grid dimension (e.g. 60)
 
 Return:
@@ -62,15 +62,20 @@ Think about:
 - Whether to prioritize dense expansion vs. reaching key areas first
 - How the circular shape affects optimal strategy
 
+Future rounds will feed reward signals back to you, including territory %, recent leaderboard position, winning code, and recent game history.
+
 Return ONLY the JavaScript function — no markdown, no explanation, just code.
 `.trim();
 
-function buildIterativePrompt({ iteration, leaderboard, winnerName, winnerCode, winnerPct, gameHistory }) {
+function buildIterativePrompt({ iteration, totalIterations, leaderboard, winnerName, winnerCode, winnerPct, gameHistory }) {
   return `
 ${ARENA_SYSTEM_PROMPT}
 
-== ITERATION ${iteration} ==
-You are trying to beat the current best algorithm.
+== ITERATION ${iteration}${totalIterations ? ` OF UP TO ${totalIterations}` : ''} ==
+You are trying to improve on the strongest result seen so far in this run.
+
+== REWARD SIGNALS FROM PRIOR ROUNDS ==
+You are being given the current leaderboard, the best-performing algorithm source code so far, and the recent game history from this run.
 
 == LEADERBOARD ==
 ${leaderboard.map((entry, i) => `  ${i + 1}. ${entry.name} — avg ${entry.avgPct}% territory over ${entry.runs} runs`).join('\n')}
@@ -83,10 +88,10 @@ ${winnerCode}
 \`\`\`
 
 == GAME HISTORY (last 5 runs) ==
-${gameHistory.slice(-5).map(g => `  Iter ${g.iter}: ${g.winnerName} won with ${g.winnerPct}% in ${g.ticks} ticks`).join('\n')}
+${gameHistory.slice(-5).map(g => `  Iter ${g.iter}: ${g.algoName} averaged ${g.avgPct}% in ${g.ticks} ticks`).join('\n')}
 
 == YOUR TASK ==
-Analyze the winning algorithm's weaknesses and write a better one.
+Analyze the current best algorithm's weaknesses and write a better one.
 Consider:
 - What does the current winner do well? What are its blind spots?
 - Can you encircle it early, denying it space?
