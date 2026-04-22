@@ -132,14 +132,21 @@ function loadBaselineAlgos() {
 function extractFunction(rawCode) {
   // Strip markdown fences if the model wrapped its output
   const code = rawCode.replace(/```[a-z]*/gi, '').replace(/```/g, '').trim();
-  // Evaluate and return the function
+  const functionNameMatch = code.match(/function\s+([A-Za-z_$][\w$]*)\s*\(/);
+  if (!functionNameMatch) {
+    throw new Error('Could not find a named function in model output');
+  }
+
+  const functionName = functionNameMatch[1];
+
+  // Evaluate and return the function without re-embedding the source in a
+  // template literal, since model code often uses `${...}` internally.
   // eslint-disable-next-line no-new-func
-  const fn = new Function(`
-    const EMPTY = -1;
+  const fn = new Function('EMPTY', `
+    "use strict";
     ${code}
-    const match = \`${code}\`.match(/function\\s+(\\w+)/);
-    return match ? eval(match[1]) : undefined;
-  `)();
+    return typeof ${functionName} === 'function' ? ${functionName} : undefined;
+  `)(EMPTY);
   if (typeof fn !== 'function') throw new Error('Could not extract function from model output');
   return fn;
 }
@@ -594,4 +601,5 @@ module.exports = {
   runGame,
   runModelEval,
   parseCliArgs,
+  extractFunction,
 };
