@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Arena War — LLM Eval</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #f5f4f0; color: #1a1a1a; }
+    #root { padding: 1rem; max-width: 960px; margin: 0 auto; }
+    h1 { font-size: 18px; font-weight: 500; margin-bottom: 1rem; }
+
+    .top-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 1rem; flex-wrap: wrap; }
+    .top-bar label { font-size: 13px; color: #666; }
+    .top-bar select, .top-bar input[type=range] { font-size: 13px; }
+    .btn {
+      font-size: 13px; padding: 6px 14px; cursor: pointer;
+      border-radius: 8px; border: 0.5px solid #ccc;
+      background: #fff; color: #1a1a1a;
+    }
+    .btn:hover { background: #f0f0f0; }
+    .btn.primary { background: #1a1a1a; color: #fff; border-color: #1a1a1a; }
+    .btn.primary:hover { opacity: 0.85; }
+
+    .arena-row { display: flex; gap: 16px; align-items: flex-start; }
+    #canvas-wrap {
+      flex-shrink: 0;
+      border: 0.5px solid #ddd;
+      border-radius: 8px;
+      overflow: hidden;
+      background: #eee;
+    }
+    canvas { display: block; }
+
+    .side-panel { flex: 1; min-width: 200px; display: flex; flex-direction: column; gap: 12px; }
+    .panel-card {
+      background: #fff; border: 0.5px solid #ddd;
+      border-radius: 8px; padding: 12px;
+    }
+    .panel-title {
+      font-size: 11px; font-weight: 500; color: #888;
+      text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 8px;
+    }
+    .stat-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+    .swatch { width: 12px; height: 12px; border-radius: 2px; flex-shrink: 0; }
+    .stat-label { font-size: 13px; flex: 1; }
+    .stat-bar-wrap { width: 60px; height: 6px; background: #eee; border-radius: 3px; overflow: hidden; }
+    .stat-bar { height: 100%; border-radius: 3px; transition: width 0.15s; }
+    .stat-pct { font-size: 12px; font-weight: 500; color: #666; min-width: 32px; text-align: right; }
+
+    .history-list { max-height: 160px; overflow-y: auto; }
+    .hist-item {
+      font-size: 12px; color: #666; padding: 3px 0;
+      border-bottom: 0.5px solid #eee;
+    }
+    .hist-item:last-child { border-bottom: none; }
+
+    .tick-label { font-size: 13px; color: #666; }
+    #speed-val { font-size: 13px; font-weight: 500; min-width: 28px; }
+    .winner-banner {
+      font-size: 13px; font-weight: 500;
+      padding: 6px 10px; border-radius: 8px;
+      background: #f0f0f0; border: 0.5px solid #ccc;
+      display: none;
+    }
+
+    /* Algorithm injection panel */
+    .algo-inject { margin-top: 1rem; }
+    .algo-inject textarea {
+      width: 100%; height: 120px; font-family: monospace;
+      font-size: 12px; padding: 8px; border: 0.5px solid #ccc;
+      border-radius: 8px; resize: vertical; background: #fafafa;
+    }
+    .inject-row { display: flex; gap: 8px; margin-top: 8px; align-items: center; }
+    .inject-row select { font-size: 13px; flex: 1; }
+    #inject-status { font-size: 12px; color: #666; }
+  </style>
+</head>
+<body>
+<div id="root">
+  <h1>arena war — llm eval</h1>
+
+  <div class="top-bar">
+    <label>players</label>
+    <select id="n-players">
+      <option value="2">2</option>
+      <option value="3">3</option>
+      <option value="4" selected>4</option>
+      <option value="5">5</option>
+      <option value="6">6</option>
+    </select>
+    <label>grid</label>
+    <select id="grid-size">
+      <option value="40">40×40</option>
+      <option value="60" selected>60×60</option>
+      <option value="80">80×80</option>
+    </select>
+    <label>speed</label>
+    <input type="range" id="speed" min="1" max="20" value="8" style="width:80px">
+    <span id="speed-val">8</span>
+    <button class="btn primary" id="btn-start">Start</button>
+    <button class="btn" id="btn-reset">Reset</button>
+    <span class="tick-label">tick <span id="tick-num">0</span></span>
+    <div class="winner-banner" id="winner-banner"></div>
+  </div>
+
+  <div class="arena-row">
+    <div id="canvas-wrap"><canvas id="arena"></canvas></div>
+    <div class="side-panel">
+      <div class="panel-card">
+        <div class="panel-title">territory</div>
+        <div id="stats-body"></div>
+      </div>
+      <div class="panel-card">
+        <div class="panel-title">algorithms</div>
+        <div id="algo-list"></div>
+      </div>
+      <div class="panel-card">
+        <div class="panel-title">iteration history</div>
+        <div class="history-list" id="history-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Algorithm injection panel — this is where model-generated code gets dropped in -->
+  <div class="panel-card algo-inject">
+    <div class="panel-title">inject model algorithm</div>
+    <p style="font-size:12px;color:#888;margin-bottom:8px;">
+      Paste a model-generated algorithm here. Function signature: <code>function(id, grid, size) → [[row,col], ...]</code>
+    </p>
+    <textarea id="algo-code" placeholder="// paste algorithm here
+function myAlgo(id, grid, size) {
+  const EMPTY = -1;
+  const frontier = [];
+  // ... your logic
+  return frontier; // array of [row, col] to claim
+}"></textarea>
+    <div class="inject-row">
+      <label style="font-size:13px;color:#666">replace player</label>
+      <select id="inject-slot"></select>
+      <button class="btn" id="btn-inject">Inject &amp; Reset</button>
+      <span id="inject-status"></span>
+    </div>
+  </div>
+</div>
+
+<script src="algorithms.js"></script>
+<script src="engine.js"></script>
+<script src="ui.js"></script>
+</body>
+</html>

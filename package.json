@@ -1,0 +1,18 @@
+{
+  "name": "arena-war-eval",
+  "version": "0.1.0",
+  "description": "LLM coding eval — adversarial spatial territory capture",
+  "main": "eval-runner.js",
+  "scripts": {
+    "eval": "node eval-runner.js",
+    "eval:quick": "node eval-runner.js --iterations 3 --games-per-iter 3",
+    "eval:full": "node eval-runner.js --iterations 15 --games-per-iter 10",
+    "serve": "python3 -m http.server 3000"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0"
+  },
+  "devDependencies": {
+    "serve": "^14.0.0"
+  }
+}
