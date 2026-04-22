@@ -41,7 +41,11 @@
   - Source of truth for the benchmark loop.
   - Owns prompt -> generated algorithm -> extraction -> headless evaluation -> feedback -> plateau stop -> `eval-results.json`.
   - Supports repeated `--model` flags for multi-model comparisons.
+  - Supports multiple LLM providers via `--provider anthropic|openai` (default: anthropic).
   - Current output schema is comparison-oriented and includes protocol metadata, model summaries, per-iteration details, prompt feedback, and representative board snapshots.
+- `providers.js`
+  - Unified provider interface supporting Anthropic and OpenAI.
+  - Exports `callModel(provider, model, prompt, maxTokens)` which returns `{ text, usage, latency }`.
 - `prompts.js`
   - Defines the first-round prompt and iterative prompt.
   - Iterative prompt feeds leaderboard, current winner code, and recent history back into later rounds.
@@ -125,8 +129,12 @@
 - Run evals with:
   - `npm run eval:quick`
   - `npm run eval -- --model claude-sonnet-4-20250514 --model gpt-4o`
-- `ANTHROPIC_API_KEY` must be set before running the eval harness.
+  - `npm run eval -- --provider openai --model gpt-4o`
+- API keys required before running the eval harness:
+  - `ANTHROPIC_API_KEY` for anthropic provider (default)
+  - `OPENAI_API_KEY` for openai provider
 - `eval-results.json` is written locally and ignored by git.
+- Run `node test-providers.js` to verify the provider backend loads without making API calls.
 
 ## Interpretation Rules
 - Prefer shared-protocol comparison over isolated single-run impressions.

@@ -7,10 +7,12 @@
     "eval": "node eval-runner.js",
     "eval:quick": "node eval-runner.js --iterations 3 --games-per-iter 3",
     "eval:full": "node eval-runner.js --iterations 6 --games-per-iter 5",
+    "test:providers": "node test-providers.js",
     "serve": "python3 -m http.server 3000"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.39.0"
+    "@anthropic-ai/sdk": "^0.39.0",
+    "openai": "^4.104.0"
   },
   "devDependencies": {
     "serve": "^14.0.0"

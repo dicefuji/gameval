@@ -15,18 +15,20 @@
  *   node eval-runner.js --model claude-sonnet-4-20250514 --model gpt-4o --iterations 6 --games-per-iter 5
  *
  * Environment:
- *   ANTHROPIC_API_KEY must be set
+ *   ANTHROPIC_API_KEY must be set for anthropic provider
+ *   OPENAI_API_KEY must be set for openai provider
  */
 
-const Anthropic = require('@anthropic-ai/sdk');
 const fs = require('fs');
 const path = require('path');
 const { ALGOS, ALGO_NAMES } = require('./algorithms');
 const { BASELINE_PROMPT, buildIterativePrompt } = require('./prompts');
+const { callModel, validateProvider } = require('./providers');
 
 // ─── Headless engine (copy of engine.js logic for Node) ──────────────────────
 const EMPTY = -1;
 const DEFAULT_MODEL = 'claude-sonnet-4-20250514';
+const DEFAULT_PROVIDER = 'anthropic';
 const DEFAULT_MAX_ITERATIONS = 6;
 const DEFAULT_GAMES_PER_ITER = 5;
 const DEFAULT_GRID_SIZE = 60;
@@ -235,7 +237,7 @@ function summarizeModelRun({ model, iterations, stopReason, maxIterations, plate
 }
 
 async function runModelEval({
-  client,
+  provider,
   model,
   maxIterations,
   gamesPerIter,
@@ -284,13 +286,8 @@ async function runModelEval({
           gameHistory,
         });
 
-    console.log(`Calling ${model}...`);
-    const message = await client.messages.create({
-      model,
-      max_tokens: 2048,
-      messages: [{ role: 'user', content: prompt }],
-    });
-    const rawCode = message.content.find(block => block.type === 'text')?.text ?? '';
+    console.log(`Calling ${provider}/${model}...`);
+    const { text: rawCode } = await callModel(provider, model, prompt, 2048);
 
     let modelFn;
     try {
@@ -405,6 +402,7 @@ async function runEval(opts = {}) {
   const {
     model = DEFAULT_MODEL,
     models = [],
+    provider = DEFAULT_PROVIDER,
     maxIterations = DEFAULT_MAX_ITERATIONS,
     gamesPerIter = DEFAULT_GAMES_PER_ITER,
     gridSize = DEFAULT_GRID_SIZE,
@@ -414,11 +412,7 @@ async function runEval(opts = {}) {
     outputPath = path.join(__dirname, 'eval-results.json'),
   } = opts;
 
-  if (!process.env.ANTHROPIC_API_KEY) {
-    throw new Error('ANTHROPIC_API_KEY is required to run evals.');
-  }
-
-  const client = new Anthropic();
+  validateProvider(provider);
   const baselinePool = loadBaselineAlgos();
   const requestedModels = [...new Set(
     ((Array.isArray(models) && models.length) ? models : [model]).filter(Boolean)
@@ -449,7 +443,7 @@ async function runEval(opts = {}) {
 
   for (const modelName of requestedModels) {
     benchmarkResults.models[modelName] = await runModelEval({
-      client,
+      provider,
       model: modelName,
       maxIterations,
       gamesPerIter,
@@ -485,6 +479,7 @@ function parseCliArgs(argv) {
   const args = argv.slice(2);
   const values = {
     models: [],
+    provider: DEFAULT_PROVIDER,
     outputPath: path.join(__dirname, 'eval-results.json'),
   };
 
@@ -504,6 +499,10 @@ function parseCliArgs(argv) {
         break;
       case '--model':
         values.models.push(readValue(i, arg));
+        i++;
+        break;
+      case '--provider':
+        values.provider = readValue(i, arg);
         i++;
         break;
       case '--iterations':
@@ -555,6 +554,7 @@ Usage:
 
 Options:
   --model <name>                    Repeat to benchmark multiple models
+  --provider <anthropic|openai>    LLM provider (default: ${DEFAULT_PROVIDER})
   --iterations <n>                 Target iterations per model (default: ${DEFAULT_MAX_ITERATIONS})
   --games-per-iter <n>             Headless games per iteration (default: ${DEFAULT_GAMES_PER_ITER})
   --grid-size <n>                  Arena grid size (default: ${DEFAULT_GRID_SIZE})
@@ -583,6 +583,7 @@ if (require.main === module) {
   runEval({
     model: cliOptions.models[0],
     models: cliOptions.models,
+    provider: cliOptions.provider,
     maxIterations: cliOptions.maxIterations,
     gamesPerIter: cliOptions.gamesPerIter,
     gridSize: cliOptions.gridSize,
@@ -602,4 +603,5 @@ module.exports = {
   runModelEval,
   parseCliArgs,
   extractFunction,
+  DEFAULT_PROVIDER,
 };
