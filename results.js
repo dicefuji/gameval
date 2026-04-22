@@ -29,6 +29,12 @@
   const snapshotCanvas = document.getElementById('snapshot-canvas');
   const snapshotMeta = document.getElementById('snapshot-meta');
   const followOn = document.getElementById('follow-on');
+  const headToHeadMatrix = document.getElementById('head-to-head-matrix');
+  const failureTaxonomy = document.getElementById('failure-taxonomy');
+  const chartTooltip = document.getElementById('chart-tooltip');
+  const themeToggle = document.getElementById('theme-toggle');
+  const themeIcon = document.getElementById('theme-icon');
+  const themeLabel = document.getElementById('theme-label');
 
   const state = {
     results: null,
@@ -48,7 +54,7 @@
 
   function metricCard(value, label) {
     return `
-      <div class="panel" style="padding:12px">
+      <div class="panel" style="padding:14px">
         <div class="metric-value">${escapeHtml(value)}</div>
         <div class="metric-label">${escapeHtml(label)}</div>
       </div>
@@ -246,10 +252,10 @@
     } catch (error) {
       emptyState.innerHTML = `
         <strong>Results dashboard is ready, but no benchmark output is available yet.</strong>
-        <p style="margin-top:8px">
+        <p style="margin-top:10px; color: var(--text-secondary)">
           ${escapeHtml(error.message)}
         </p>
-        <p style="margin-top:8px">
+        <p style="margin-top:10px; color: var(--text-muted)">
           Run <code>npm run eval:quick</code> or <code>npm run eval -- --model claude-sonnet-4-20250514 --model gpt-4o</code>, then reload this page.
         </p>
       `;
@@ -268,6 +274,8 @@
     renderSelectors();
     renderSelectedRun();
     renderFollowOn();
+    renderHeadToHeadMatrix();
+    renderFailureTaxonomy();
   }
 
   function renderSummary() {
@@ -349,11 +357,11 @@
 
   function renderChart() {
     const width = 900;
-    const height = 300;
-    const left = 48;
+    const height = 320;
+    const left = 52;
     const right = 20;
     const top = 18;
-    const bottom = 38;
+    const bottom = 42;
     const chartWidth = width - left - right;
     const chartHeight = height - top - bottom;
     const maxIter = Math.max(1, ...state.modelKeys.map(key => {
@@ -366,36 +374,77 @@
       return left + ((iter - 1) / (maxIter - 1)) * chartWidth;
     };
 
+    // Y-axis grid lines
     const gridLines = [0, 25, 50, 75, 100].map(pct => {
       const y = yForPct(pct);
+      const isMajor = pct === 0 || pct === 100;
       return `
-        <line x1="${left}" y1="${y}" x2="${left + chartWidth}" y2="${y}" stroke="#e7e7e7" stroke-width="1" />
-        <text x="${left - 8}" y="${y + 4}" text-anchor="end" font-size="11" fill="#888">${pct}%</text>
+        <line class="${isMajor ? 'grid-line-major' : 'grid-line'}" x1="${left}" y1="${y}" x2="${left + chartWidth}" y2="${y}" />
+        <text class="axis-label" x="${left - 10}" y="${y + 4}" text-anchor="end">${pct}%</text>
       `;
     }).join('');
 
+    // X-axis ticks
     const xTicks = Array.from({ length: maxIter }, (_, index) => index + 1).map(iter => {
       const x = xForIter(iter);
       return `
-        <line x1="${x}" y1="${top}" x2="${x}" y2="${top + chartHeight}" stroke="#f0f0f0" stroke-width="1" />
-        <text x="${x}" y="${height - 12}" text-anchor="middle" font-size="11" fill="#888">${iter}</text>
+        <line class="grid-line" x1="${x}" y1="${top}" x2="${x}" y2="${top + chartHeight}" />
+        <text class="axis-label" x="${x}" y="${height - 14}" text-anchor="middle">${iter}</text>
       `;
     }).join('');
 
-    const lines = state.modelKeys.map((key, index) => {
-      const color = COLORS[index % COLORS.length];
-      const learningCurve = state.results.models[key].summary.learningCurve || [];
-      if (!learningCurve.length) return '';
+    // Axis labels
+    const axisLabels = `
+      <text class="axis-label" x="${left - 36}" y="${top + chartHeight / 2}" text-anchor="middle" transform="rotate(-90, ${left - 36}, ${top + chartHeight / 2})" style="font-size:12px; fill:var(--text-muted);">Territory %</text>
+      <text class="axis-label" x="${left + chartWidth / 2}" y="${height - 2}" text-anchor="middle" style="font-size:12px; fill:var(--text-muted);">Eval Iteration</text>
+    `;
 
-      const points = learningCurve.map(point => `${xForIter(point.iter)},${yForPct(point.avgPct)}`).join(' ');
-      const circles = learningCurve.map(point => {
+    // Build confidence bands and lines
+    const modelData = state.modelKeys.map((key, index) => {
+      const color = COLORS[index % COLORS.length];
+      const learningCurveData = state.results.models[key].summary.learningCurve || [];
+      return { key, color, learningCurveData };
+    });
+
+    // Confidence bands (rendered before lines so lines sit on top)
+    const confidenceBands = modelData.map(({ color, learningCurveData }) => {
+      if (!learningCurveData.length || !learningCurveData[0].std) return '';
+      const bandPoints = [];
+      learningCurveData.forEach(point => {
+        const std = point.std || 0;
+        bandPoints.push(`${xForIter(point.iter)},${yForPct(Math.min(100, point.avgPct + std))}`);
+      });
+      for (let i = learningCurveData.length - 1; i >= 0; i--) {
+        const point = learningCurveData[i];
+        const std = point.std || 0;
+        bandPoints.push(`${xForIter(point.iter)},${yForPct(Math.max(0, point.avgPct - std))}`);
+      }
+      return `<polygon class="confidence-band" points="${bandPoints.join(' ')}" fill="${color}" />`;
+    }).join('');
+
+    const lines = modelData.map(({ key, color, learningCurveData }) => {
+      if (!learningCurveData.length) return '';
+
+      const points = learningCurveData.map(point => `${xForIter(point.iter)},${yForPct(point.avgPct)}`).join(' ');
+
+      const circles = learningCurveData.map(point => {
         const x = xForIter(point.iter);
         const y = yForPct(point.avgPct);
-        return `<circle cx="${x}" cy="${y}" r="4" fill="${color}" />`;
+        const std = point.std || 0;
+        return `
+          <circle class="chart-point"
+            cx="${x}" cy="${y}" r="4" fill="${color}" stroke="none"
+            data-model="${escapeHtml(key)}"
+            data-iter="${point.iter}"
+            data-avg="${point.avgPct}"
+            data-std="${std}"
+            data-ticks="${point.avgTicks ?? 'n/a'}"
+          />
+        `;
       }).join('');
 
       return `
-        <polyline fill="none" stroke="${color}" stroke-width="3" points="${points}" />
+        <polyline class="chart-line" fill="none" stroke="${color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" points="${points}" />
         ${circles}
       `;
     }).join('');
@@ -404,8 +453,10 @@
       <rect x="0" y="0" width="${width}" height="${height}" fill="transparent" />
       ${gridLines}
       ${xTicks}
-      <line x1="${left}" y1="${top + chartHeight}" x2="${left + chartWidth}" y2="${top + chartHeight}" stroke="#cfcfcf" stroke-width="1" />
-      <line x1="${left}" y1="${top}" x2="${left}" y2="${top + chartHeight}" stroke="#cfcfcf" stroke-width="1" />
+      ${axisLabels}
+      <line x1="${left}" y1="${top + chartHeight}" x2="${left + chartWidth}" y2="${top + chartHeight}" stroke="var(--border-hover)" stroke-width="1.5" />
+      <line x1="${left}" y1="${top}" x2="${left}" y2="${top + chartHeight}" stroke="var(--border-hover)" stroke-width="1.5" />
+      ${confidenceBands}
       ${lines}
     `;
 
@@ -415,10 +466,51 @@
       return `
         <div class="legend-item">
           <span class="legend-swatch" style="background:${color}"></span>
-          <span>${escapeHtml(entry.model)} · best ${escapeHtml(entry.bestAvgPct)}% · net ${escapeHtml(formatPercentDelta(comparison.netImprovement))}</span>
+          <span>${escapeHtml(entry.model)} &middot; best ${escapeHtml(entry.bestAvgPct)}% &middot; net ${escapeHtml(formatPercentDelta(comparison.netImprovement))}</span>
         </div>
       `;
     }).join('');
+
+    attachChartTooltips();
+  }
+
+  function attachChartTooltips() {
+    const points = learningCurve.querySelectorAll('.chart-point');
+    points.forEach(point => {
+      point.addEventListener('mouseenter', (e) => {
+        const model = e.target.getAttribute('data-model');
+        const iter = e.target.getAttribute('data-iter');
+        const avg = e.target.getAttribute('data-avg');
+        const std = e.target.getAttribute('data-std');
+        const ticks = e.target.getAttribute('data-ticks');
+
+        const stdLine = std && parseFloat(std) > 0 ? `<span>Std dev: &plusmn;${std}%</span>` : '';
+        const ticksLine = ticks && ticks !== 'n/a' ? `<span>Avg ticks: ${ticks}</span>` : '';
+
+        chartTooltip.innerHTML = `
+          <strong>${escapeHtml(model)}</strong>
+          <span>Iter ${iter}: ${avg}% territory</span>
+          ${stdLine}
+          ${ticksLine}
+        `;
+
+        const svgRect = learningCurve.getBoundingClientRect();
+        const pointRect = e.target.getBoundingClientRect();
+        const containerRect = document.getElementById('chart-container').getBoundingClientRect();
+
+        let left = pointRect.left - containerRect.left + 14;
+        let top = pointRect.top - containerRect.top - 8;
+
+        // Clamp tooltip within container
+        chartTooltip.style.left = `${left}px`;
+        chartTooltip.style.top = `${top}px`;
+        chartTooltip.classList.add('visible');
+      });
+
+      point.addEventListener('mouseleave', () => {
+        chartTooltip.classList.remove('visible');
+      });
+    });
   }
 
   function renderSelectors() {
@@ -469,7 +561,7 @@
       rewardSignals.innerHTML = '';
       leaderboardSnapshot.innerHTML = listRow('No successful iterations', 'n/a');
       historySnapshot.innerHTML = '';
-      codeViewer.textContent = '// no generated code available';
+      codeViewer.innerHTML = syntaxHighlight('// no generated code available');
       snapshotMeta.innerHTML = '';
       drawGrid(null);
       return;
@@ -498,7 +590,7 @@
       ? history.map(entry => listRow(`Eval iter ${entry.iter}: ${entry.algoName}`, `${entry.avgPct}% in ${entry.ticks} ticks`)).join('')
       : listRow('No same-model history yet', selectedIteration.promptMode === 'baseline' ? 'baseline eval round' : 'n/a');
 
-    codeViewer.textContent = selectedIteration.rawCode || '// no generated code captured';
+    codeViewer.innerHTML = syntaxHighlight(selectedIteration.rawCode || '// no generated code captured');
 
     if (selectedIteration.representativeGame && selectedIteration.representativeGame.finalGrid) {
       snapshotMeta.innerHTML = [
@@ -532,17 +624,118 @@
     }).join('');
   }
 
+  /* ─── Head-to-Head Matrix placeholder ─── */
+  function renderHeadToHeadMatrix() {
+    const rankings = state.results.rankings || [];
+    if (rankings.length < 2) {
+      headToHeadMatrix.innerHTML = `
+        <div class="placeholder-cell">At least two model runs required for head-to-head matrix</div>
+      `;
+      return;
+    }
+
+    // TODO: Replace with actual head-to-head win-rate data when available in eval-results.json
+    const models = rankings.map(r => r.model);
+    const matrixHTML = models.map((rowModel, rowIdx) => {
+      const cells = models.map((colModel, colIdx) => {
+        if (rowIdx === colIdx) {
+          return `<div class="placeholder-cell" style="background:var(--bg-chip); font-weight:600;">—</div>`;
+        }
+        // Placeholder: would show win % of rowModel vs colModel
+        return `<div class="placeholder-cell">${escapeHtml(rowModel)} vs ${escapeHtml(colModel)}<br><span style="font-size:11px; color:var(--text-muted)">pending replay data</span></div>`;
+      }).join('');
+      return `<div style="display:contents">${cells}</div>`;
+    }).join('');
+
+    headToHeadMatrix.innerHTML = `
+      <div style="display:grid; grid-template-columns: repeat(${models.length}, minmax(140px, 1fr)); gap:10px; overflow-x:auto;">
+        ${matrixHTML}
+      </div>
+    `;
+  }
+
+  /* ─── Failure Taxonomy placeholder ─── */
+  function renderFailureTaxonomy() {
+    const entries = allComparisonEntries();
+
+    // TODO: Replace with actual failure taxonomy when data is available in eval-results.json
+    const hasErrors = entries.some(e => e.modelResult.iterations.some(i => i.error));
+    const hasPlateau = entries.some(e => e.stopReason && e.stopReason.includes('plateau'));
+
+    if (!hasErrors && !hasPlateau && entries.length === 1) {
+      failureTaxonomy.innerHTML = `<div class="placeholder-cell">Single model run with no failures recorded</div>`;
+      return;
+    }
+
+    const cells = entries.map(entry => {
+      const errorCount = entry.modelResult.iterations.filter(i => i.error).length;
+      const isPlateau = entry.stopReason && entry.stopReason.includes('plateau');
+      return `
+        <div class="placeholder-cell">
+          <strong style="display:block; margin-bottom:4px; color:var(--text-primary);">${escapeHtml(entry.model)}</strong>
+          <span style="font-size:12px; color:var(--text-secondary);">
+            ${errorCount > 0 ? `${errorCount} extraction error(s)` : 'No extraction errors'}<br>
+            ${isPlateau ? 'Stopped at plateau' : entry.stopReason === 'max_iterations_reached' ? 'Ran to completion' : formatStopReason(entry.stopReason)}
+          </span>
+        </div>
+      `;
+    }).join('');
+
+    failureTaxonomy.innerHTML = cells;
+  }
+
+  /* ─── Simple DOM-based syntax highlighting ─── */
+  function syntaxHighlight(code) {
+    if (!code) return '<span class="token-comment">// no generated code available</span>';
+
+    // Step 1: Protect strings and comments with placeholders so they survive escaping
+    const placeholders = [];
+    const save = (str) => { placeholders.push(str); return `__PH${placeholders.length - 1}__`; };
+
+    let html = code
+      .replace(/(\/\*[\s\S]*?\*\/)/g, save)
+      .replace(/(\/\/.*$)/gm, save)
+      .replace(/('(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"|`(?:[^`\\]|\\.)*`)/g, save);
+
+    // Step 2: Escape remaining HTML
+    html = escapeHtml(html);
+
+    // Step 3: Highlight numbers, keywords, and function names
+    html = html.replace(/\b(\d+(?:\.\d+)?)\b/g, '<span class="token-number">$1</span>');
+    const keywords = [
+      'function', 'return', 'if', 'else', 'for', 'while', 'const', 'let', 'var',
+      'true', 'false', 'null', 'undefined', 'new', 'this', 'class', 'extends',
+      'try', 'catch', 'throw', 'async', 'await', 'import', 'export', 'default',
+      'switch', 'case', 'break', 'continue', 'in', 'of', 'typeof', 'instanceof',
+    ];
+    const keywordPattern = new RegExp(`\\b(${keywords.join('|')})\\b`, 'g');
+    html = html.replace(keywordPattern, '<span class="token-keyword">$1</span>');
+    html = html.replace(/\bfunction\s+(\w+)\b/g, 'function <span class="token-function">$1</span>');
+    html = html.replace(/\b(\w+)\s*\(/g, '<span class="token-function">$1</span>(');
+
+    // Step 4: Restore placeholders wrapped in syntax spans
+    placeholders.forEach((ph, i) => {
+      const cls = ph.startsWith('//') || ph.startsWith('/*') ? 'token-comment' : 'token-string';
+      html = html.replace(`__PH${i}__`, `<span class="${cls}">${escapeHtml(ph)}</span>`);
+    });
+
+    return html;
+  }
+
   function drawGrid(grid) {
     const ctx = snapshotCanvas.getContext('2d');
     const canvasSize = snapshotCanvas.width;
 
     ctx.clearRect(0, 0, canvasSize, canvasSize);
-    ctx.fillStyle = '#f7f7f7';
+
+    // Dark-mode-aware background
+    const isDark = document.documentElement.getAttribute('data-theme') !== 'light';
+    ctx.fillStyle = isDark ? '#1e1e1e' : '#f7f7f7';
     ctx.fillRect(0, 0, canvasSize, canvasSize);
 
     if (!grid || !grid.length) {
-      ctx.fillStyle = '#888';
-      ctx.font = '13px system-ui, sans-serif';
+      ctx.fillStyle = isDark ? '#888' : '#555';
+      ctx.font = '13px -apple-system, BlinkMacSystemFont, sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText('No board snapshot available', canvasSize / 2, canvasSize / 2);
       return;
@@ -556,7 +749,7 @@
         const cell = grid[row][col];
         if (cell === null) continue;
         if (cell === -1) {
-          ctx.fillStyle = 'rgba(120, 120, 120, 0.16)';
+          ctx.fillStyle = isDark ? 'rgba(120, 120, 120, 0.18)' : 'rgba(120, 120, 120, 0.12)';
         } else {
           ctx.fillStyle = COLORS[cell % COLORS.length];
         }
@@ -565,5 +758,40 @@
     }
   }
 
+  /* ─── Theme Toggle ─── */
+  function initTheme() {
+    const saved = localStorage.getItem('arena-war-theme');
+    const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const initial = saved || (prefersDark ? 'dark' : 'light');
+    setTheme(initial);
+
+    themeToggle.addEventListener('click', () => {
+      const current = document.documentElement.getAttribute('data-theme') || 'dark';
+      const next = current === 'dark' ? 'light' : 'dark';
+      setTheme(next);
+    });
+  }
+
+  function setTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('arena-war-theme', theme);
+    if (themeIcon) themeIcon.textContent = theme === 'dark' ? '\u2600' : '\u263E';
+    if (themeLabel) themeLabel.textContent = theme === 'dark' ? 'Light' : 'Dark';
+    // Redraw canvas if needed since background color depends on theme
+    if (state.results) {
+      const modelResult = state.results.models[state.selectedModel];
+      const selectedIteration = modelResult?.iterations.find(iter => iter.iter === state.selectedIteration && !iter.error)
+        || modelResult?.iterations.find(iter => !iter.error)
+        || null;
+      if (selectedIteration?.representativeGame?.finalGrid) {
+        drawGrid(selectedIteration.representativeGame.finalGrid);
+      } else {
+        drawGrid(null);
+      }
+    }
+  }
+
+  // Initialize
+  initTheme();
   loadResults();
 })();

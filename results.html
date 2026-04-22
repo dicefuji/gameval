@@ -5,188 +5,683 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Arena War — Results Dashboard</title>
   <style>
+    /* ─── CSS Variables ─── */
+    :root {
+      --bg-page: #0f0f0f;
+      --bg-panel: #161616;
+      --bg-panel-hover: #1c1c1c;
+      --bg-elevated: #1e1e1e;
+      --bg-chip: #252525;
+      --bg-table-row: #141414;
+      --bg-table-row-alt: #181818;
+      --bg-input: #1a1a1a;
+      --bg-code: #0d0d0d;
+      --text-primary: #f0f0f0;
+      --text-secondary: #a0a0a0;
+      --text-muted: #6a6a6a;
+      --border-subtle: #2a2a2a;
+      --border-hover: #3a3a3a;
+      --accent-orange: #E87040;
+      --accent-blue: #5B9CF6;
+      --accent-green: #6BC98A;
+      --accent-purple: #C97BE8;
+      --accent-yellow: #F5C842;
+      --accent-red: #E85F7A;
+      --accent-cyan: #40C8C8;
+      --accent-indigo: #A0A0F0;
+      --shadow-sm: 0 1px 2px rgba(0,0,0,0.4);
+      --shadow-md: 0 4px 12px rgba(0,0,0,0.5);
+      --radius-sm: 8px;
+      --radius-md: 12px;
+      --radius-lg: 16px;
+      --transition-fast: 0.15s ease;
+      --transition-base: 0.25s ease;
+    }
+
+    :root[data-theme="light"] {
+      --bg-page: #f5f4f0;
+      --bg-panel: #ffffff;
+      --bg-panel-hover: #fafafa;
+      --bg-elevated: #f0f0f0;
+      --bg-chip: #f0f0f0;
+      --bg-table-row: #fafafa;
+      --bg-table-row-alt: #f5f5f5;
+      --bg-input: #ffffff;
+      --bg-code: #111111;
+      --text-primary: #1a1a1a;
+      --text-secondary: #555555;
+      --text-muted: #888888;
+      --border-subtle: #e0e0e0;
+      --border-hover: #cccccc;
+      --shadow-sm: 0 1px 2px rgba(0,0,0,0.06);
+      --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
+    }
+
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: system-ui, sans-serif; background: #f5f4f0; color: #1a1a1a; }
-    #root { max-width: 1160px; margin: 0 auto; padding: 1.25rem; }
-    h1 { font-size: 26px; font-weight: 600; margin-bottom: 0.4rem; }
-    p { line-height: 1.5; }
-    .subhead { color: #666; max-width: 820px; margin-bottom: 0.85rem; }
-    .page-links { display: flex; gap: 12px; margin-bottom: 1.25rem; flex-wrap: wrap; }
-    .page-links a { color: #666; text-decoration: none; font-size: 13px; }
-    .page-links a:hover { text-decoration: underline; }
-    .section { margin-bottom: 1rem; }
-    .grid { display: grid; gap: 16px; }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      background: var(--bg-page);
+      color: var(--text-primary);
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      transition: background var(--transition-base), color var(--transition-base);
+    }
+
+    #root {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 1.5rem 1.25rem 3rem;
+    }
+
+    /* ─── Header ─── */
+    .page-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 1rem;
+      flex-wrap: wrap;
+      margin-bottom: 0.75rem;
+    }
+
+    h1 {
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      line-height: 1.2;
+    }
+
+    .subhead {
+      color: var(--text-secondary);
+      max-width: 820px;
+      margin-bottom: 1rem;
+      font-size: 14px;
+      line-height: 1.55;
+    }
+
+    .page-links {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 1.25rem;
+      flex-wrap: wrap;
+    }
+
+    .page-links a {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 13px;
+      padding: 4px 0;
+      border-bottom: 1px solid transparent;
+      transition: color var(--transition-fast), border-color var(--transition-fast);
+    }
+
+    .page-links a:hover {
+      color: var(--text-primary);
+      border-bottom-color: var(--border-hover);
+    }
+
+    /* ─── Theme Toggle ─── */
+    .theme-toggle {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      padding: 6px 12px;
+      color: var(--text-secondary);
+      font-size: 13px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+    }
+
+    .theme-toggle:hover {
+      background: var(--bg-panel-hover);
+      border-color: var(--border-hover);
+      color: var(--text-primary);
+    }
+
+    /* ─── Sections & Panels ─── */
+    .section {
+      margin-bottom: 1.25rem;
+    }
+
+    .grid {
+      display: grid;
+      gap: 16px;
+    }
+
     .summary-grid { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
     .verdict-grid { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
     .detail-grid { grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.9fr); align-items: start; }
+
     .panel {
-      background: #fff;
-      border: 0.5px solid #ddd;
-      border-radius: 12px;
-      padding: 14px;
+      background: var(--bg-panel);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 16px;
+      box-shadow: var(--shadow-sm);
+      transition: transform var(--transition-base), box-shadow var(--transition-base), border-color var(--transition-fast), background var(--transition-base);
     }
+
+    .panel:hover {
+      border-color: var(--border-hover);
+      box-shadow: var(--shadow-md);
+    }
+
     .panel-title {
       font-size: 11px;
       font-weight: 600;
-      color: #888;
+      color: var(--text-muted);
       text-transform: uppercase;
-      letter-spacing: 0.05em;
-      margin-bottom: 10px;
+      letter-spacing: 0.06em;
+      margin-bottom: 12px;
     }
-    .metric-value { font-size: 24px; font-weight: 600; margin-bottom: 4px; }
-    .metric-label { font-size: 12px; color: #666; }
-    .toolbar { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
-    .toolbar label { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: #666; }
+
+    /* ─── Metrics ─── */
+    .metric-value {
+      font-size: 26px;
+      font-weight: 700;
+      margin-bottom: 4px;
+      letter-spacing: -0.01em;
+      line-height: 1.2;
+      transition: color var(--transition-fast);
+    }
+
+    .metric-label {
+      font-size: 12px;
+      color: var(--text-secondary);
+      font-weight: 500;
+    }
+
+    /* ─── Toolbar & Selects ─── */
+    .toolbar {
+      display: flex;
+      gap: 14px;
+      flex-wrap: wrap;
+      align-items: end;
+    }
+
+    .toolbar label {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--text-secondary);
+      font-weight: 500;
+    }
+
     select {
-      min-width: 210px;
-      border: 0.5px solid #ccc;
-      border-radius: 8px;
-      background: #fff;
-      padding: 8px 10px;
+      min-width: 220px;
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      background: var(--bg-input);
+      padding: 9px 12px;
       font-size: 13px;
-      color: #1a1a1a;
+      color: var(--text-primary);
+      outline: none;
+      transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
     }
-    .meta-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
-    .meta-item { background: #fafafa; border-radius: 10px; padding: 10px; }
-    .meta-item strong { display: block; font-size: 12px; color: #666; margin-bottom: 4px; }
-    .meta-item span { font-size: 14px; }
-    .chip-row { display: flex; flex-wrap: wrap; gap: 8px; }
+
+    select:focus {
+      border-color: var(--accent-blue);
+      box-shadow: 0 0 0 3px rgba(91, 156, 246, 0.15);
+    }
+
+    /* ─── Meta items ─── */
+    .meta-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 10px;
+    }
+
+    .meta-item {
+      background: var(--bg-elevated);
+      border-radius: var(--radius-sm);
+      padding: 10px 12px;
+      transition: background var(--transition-fast);
+    }
+
+    .meta-item:hover {
+      background: var(--bg-chip);
+    }
+
+    .meta-item strong {
+      display: block;
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .meta-item span {
+      font-size: 14px;
+      color: var(--text-primary);
+      font-weight: 500;
+    }
+
+    /* ─── Chips ─── */
+    .chip-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
     .chip {
       display: inline-flex;
       align-items: center;
-      padding: 5px 8px;
+      padding: 5px 10px;
       border-radius: 999px;
-      background: #f0f0f0;
-      color: #444;
+      background: var(--bg-chip);
+      color: var(--text-secondary);
       font-size: 12px;
+      border: 1px solid var(--border-subtle);
+      transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
     }
+
+    .chip:hover {
+      background: var(--bg-panel-hover);
+      color: var(--text-primary);
+      border-color: var(--border-hover);
+    }
+
+    /* ─── Lists ─── */
     .leaderboard-list,
     .history-list {
       display: flex;
       flex-direction: column;
       gap: 8px;
     }
+
     .list-row {
       display: flex;
       justify-content: space-between;
       gap: 8px;
       font-size: 13px;
-      padding: 8px 10px;
-      background: #fafafa;
-      border-radius: 8px;
+      padding: 9px 12px;
+      background: var(--bg-elevated);
+      border-radius: var(--radius-sm);
+      border: 1px solid transparent;
+      transition: background var(--transition-fast), border-color var(--transition-fast);
     }
-    .chart-wrap { overflow-x: auto; }
-    svg { display: block; width: 100%; min-width: 760px; height: 300px; }
-    .chart-legend { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 10px; }
-    .legend-item { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: #666; }
-    .legend-swatch { width: 10px; height: 10px; border-radius: 999px; }
+
+    .list-row:hover {
+      background: var(--bg-chip);
+      border-color: var(--border-subtle);
+    }
+
+    .list-row span { color: var(--text-secondary); }
+    .list-row strong { color: var(--text-primary); font-weight: 600; }
+
+    /* ─── Charts ─── */
+    .chart-wrap {
+      overflow-x: auto;
+      border-radius: var(--radius-sm);
+    }
+
+    svg {
+      display: block;
+      width: 100%;
+      min-width: 760px;
+      height: 320px;
+    }
+
+    .chart-legend {
+      display: flex;
+      gap: 14px;
+      flex-wrap: wrap;
+      margin-top: 12px;
+    }
+
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--text-secondary);
+      cursor: default;
+      transition: color var(--transition-fast);
+    }
+
+    .legend-item:hover { color: var(--text-primary); }
+
+    .legend-swatch {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      flex-shrink: 0;
+    }
+
+    /* ─── Chart Tooltip ─── */
+    .chart-tooltip {
+      position: absolute;
+      pointer-events: none;
+      background: rgba(20, 20, 20, 0.95);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      padding: 8px 12px;
+      font-size: 12px;
+      color: var(--text-primary);
+      box-shadow: var(--shadow-md);
+      opacity: 0;
+      transform: translateY(4px);
+      transition: opacity var(--transition-fast), transform var(--transition-fast);
+      z-index: 100;
+      white-space: nowrap;
+    }
+
+    :root[data-theme="light"] .chart-tooltip {
+      background: rgba(255, 255, 255, 0.98);
+      box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+    }
+
+    .chart-tooltip.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .chart-tooltip strong {
+      display: block;
+      font-weight: 600;
+      margin-bottom: 2px;
+    }
+
+    .chart-tooltip span {
+      color: var(--text-secondary);
+    }
+
+    /* ─── Canvas ─── */
     canvas {
       display: block;
       width: 100%;
-      border: 0.5px solid #ddd;
-      border-radius: 10px;
-      background: #f7f7f7;
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      background: var(--bg-elevated);
     }
+
+    /* ─── Code Viewer ─── */
+    .code-viewer-wrap {
+      position: relative;
+      border-radius: var(--radius-sm);
+      overflow: hidden;
+    }
+
     pre {
       max-height: 420px;
       overflow: auto;
-      padding: 12px;
-      border-radius: 10px;
-      background: #111;
+      padding: 14px;
+      border-radius: var(--radius-sm);
+      background: var(--bg-code);
       color: #f3f3f3;
       font-size: 12px;
-      line-height: 1.45;
+      line-height: 1.55;
+      font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, monospace;
+      border: 1px solid var(--border-subtle);
     }
+
+    pre .token-keyword { color: #ff7b72; }
+    pre .token-string { color: #a5d6ff; }
+    pre .token-number { color: #79c0ff; }
+    pre .token-comment { color: #8b949e; font-style: italic; }
+    pre .token-function { color: #d2a8ff; }
+    pre .token-operator { color: #ff7b72; }
+    pre .token-punctuation { color: #c9d1d9; }
+    pre .token-property { color: #7ee787; }
+
+    /* ─── Empty State ─── */
     .empty-state {
-      padding: 28px;
-      border-radius: 12px;
-      border: 0.5px dashed #cfcfcf;
-      background: rgba(255, 255, 255, 0.65);
-      color: #666;
+      padding: 36px 28px;
+      border-radius: var(--radius-md);
+      border: 1px dashed var(--border-subtle);
+      background: var(--bg-panel);
+      color: var(--text-muted);
+      text-align: center;
+      font-size: 14px;
+      transition: background var(--transition-base), border-color var(--transition-base);
     }
-    .small-note { font-size: 12px; color: #666; margin-top: 8px; }
+
+    /* ─── Notes ─── */
+    .small-note {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 10px;
+      line-height: 1.5;
+    }
+
+    .section-copy {
+      font-size: 13px;
+      color: var(--text-secondary);
+      margin-bottom: 12px;
+      max-width: 880px;
+      line-height: 1.55;
+    }
+
+    /* ─── Guide Cards ─── */
     .read-guide {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-      gap: 10px;
+      gap: 12px;
     }
+
     .guide-card {
-      background: #fafafa;
-      border-radius: 10px;
-      padding: 12px;
+      background: var(--bg-elevated);
+      border-radius: var(--radius-sm);
+      padding: 14px;
+      border: 1px solid var(--border-subtle);
+      transition: background var(--transition-fast), border-color var(--transition-fast), transform var(--transition-fast);
     }
+
+    .guide-card:hover {
+      background: var(--bg-chip);
+      border-color: var(--border-hover);
+      transform: translateY(-1px);
+    }
+
     .guide-card strong {
       display: block;
       font-size: 13px;
-      margin-bottom: 4px;
+      margin-bottom: 6px;
+      color: var(--text-primary);
+      font-weight: 600;
     }
+
     .guide-card p {
       font-size: 13px;
-      color: #666;
-      line-height: 1.45;
-    }
-    .methodology-note {
-      font-size: 13px;
-      color: #555;
+      color: var(--text-secondary);
       line-height: 1.5;
     }
-    .methodology-note a {
-      color: #555;
+
+    .methodology-note {
+      font-size: 13px;
+      color: var(--text-secondary);
+      line-height: 1.6;
     }
+
+    .methodology-note a {
+      color: var(--accent-blue);
+      text-decoration: none;
+      font-weight: 500;
+    }
+
+    .methodology-note a:hover { text-decoration: underline; }
+
+    /* ─── Table ─── */
     .comparison-table-wrap {
       overflow-x: auto;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-subtle);
     }
+
     table {
       width: 100%;
       border-collapse: collapse;
       font-size: 13px;
     }
+
     th, td {
-      padding: 10px 8px;
-      border-bottom: 0.5px solid #e6e6e6;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border-subtle);
       text-align: left;
       white-space: nowrap;
     }
+
     th {
-      font-size: 12px;
-      color: #777;
+      font-size: 11px;
+      color: var(--text-muted);
       font-weight: 600;
       text-transform: uppercase;
       letter-spacing: 0.04em;
+      background: var(--bg-elevated);
     }
-    tbody tr:last-child td {
-      border-bottom: none;
+
+    tbody tr {
+      background: var(--bg-table-row);
+      transition: background var(--transition-fast);
     }
-    .section-copy {
+
+    tbody tr:nth-child(even) { background: var(--bg-table-row-alt); }
+
+    tbody tr:hover { background: var(--bg-panel-hover); }
+
+    tbody tr:last-child td { border-bottom: none; }
+
+    /* ─── Placeholder sections ─── */
+    .placeholder-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+    }
+
+    .placeholder-cell {
+      background: var(--bg-elevated);
+      border: 1px dashed var(--border-subtle);
+      border-radius: var(--radius-sm);
+      padding: 20px;
+      text-align: center;
+      color: var(--text-muted);
       font-size: 13px;
-      color: #666;
-      margin-bottom: 10px;
-      max-width: 880px;
+      transition: background var(--transition-fast), border-color var(--transition-fast);
     }
+
+    .placeholder-cell:hover {
+      background: var(--bg-chip);
+      border-color: var(--border-hover);
+    }
+
+    /* ─── SVG interactions ─── */
+    .chart-point {
+      transition: r var(--transition-fast);
+      cursor: pointer;
+    }
+
+    .chart-point:hover {
+      r: 6;
+      stroke: var(--text-primary);
+      stroke-width: 2px;
+    }
+
+    .chart-line {
+      transition: stroke-width var(--transition-fast);
+      cursor: pointer;
+    }
+
+    .chart-line:hover {
+      stroke-width: 4;
+    }
+
+    .confidence-band {
+      transition: opacity var(--transition-base);
+      opacity: 0.12;
+    }
+
+    .confidence-band:hover {
+      opacity: 0.22;
+    }
+
+    .axis-label {
+      font-size: 11px;
+      fill: var(--text-muted);
+      font-weight: 500;
+    }
+
+    .grid-line {
+      stroke: var(--border-subtle);
+      stroke-width: 1;
+    }
+
+    .grid-line-major {
+      stroke: var(--border-hover);
+      stroke-width: 1;
+      stroke-dasharray: 4 4;
+    }
+
+    /* ─── Animations ─── */
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(12px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .animate-in {
+      animation: fadeInUp 0.4s ease both;
+    }
+
+    .animate-in-delay-1 { animation-delay: 0.05s; }
+    .animate-in-delay-2 { animation-delay: 0.1s; }
+    .animate-in-delay-3 { animation-delay: 0.15s; }
+    .animate-in-delay-4 { animation-delay: 0.2s; }
+    .animate-in-delay-5 { animation-delay: 0.25s; }
+
+    /* ─── Responsive ─── */
     @media (max-width: 900px) {
       .detail-grid { grid-template-columns: 1fr; }
       svg { min-width: 640px; }
+      .page-header { flex-direction: column; align-items: flex-start; }
+    }
+
+    @media (max-width: 640px) {
+      #root { padding: 1rem 0.875rem 2rem; }
+      h1 { font-size: 22px; }
+      .summary-grid { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+      .verdict-grid { grid-template-columns: 1fr; }
+      .read-guide { grid-template-columns: 1fr; }
+      .toolbar { flex-direction: column; align-items: stretch; }
+      select { width: 100%; }
     }
   </style>
 </head>
 <body>
   <div id="root">
-    <h1>arena war — results dashboard</h1>
-    <p class="subhead">
-      Compare how recent models perform on the same iterative Arena War eval: initial algorithm quality, learning curve over repeated feedback, best final result, and representative board snapshots.
-    </p>
+    <div class="page-header">
+      <div>
+        <h1>arena war — results dashboard</h1>
+        <p class="subhead">
+          Compare how recent models perform on the same iterative Arena War eval: initial algorithm quality, learning curve over repeated feedback, best final result, and representative board snapshots.
+        </p>
+      </div>
+      <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle light/dark mode">
+        <span id="theme-icon">&#9788;</span>
+        <span id="theme-label">Light</span>
+      </button>
+    </div>
+
     <div class="page-links">
       <a href="results.html">results dashboard</a>
       <a href="arena.html">arena sandbox</a>
     </div>
 
     <div id="dashboard">
-      <div id="empty-state" class="empty-state">
-        Loading `eval-results.json`...
+      <div id="empty-state" class="empty-state animate-in">
+        Loading <code>eval-results.json</code>...
       </div>
 
       <div id="content" style="display:none">
-        <section class="section panel">
+        <section class="section panel animate-in">
           <div class="panel-title">How To Read This Run</div>
           <div class="read-guide">
             <div class="guide-card">
@@ -199,7 +694,7 @@
             </div>
             <div class="guide-card">
               <strong>What is the main signal?</strong>
-              <p>The learning curve is primary. Final score matters, but how a model improves after feedback is the benchmark’s core capability signal.</p>
+              <p>The learning curve is primary. Final score matters, but how a model improves after feedback is the benchmark's core capability signal.</p>
             </div>
             <div class="guide-card">
               <strong>What is secondary?</strong>
@@ -208,32 +703,32 @@
           </div>
         </section>
 
-        <section class="section panel">
+        <section class="section panel animate-in animate-in-delay-1">
           <div class="panel-title">What This Benchmark Measures</div>
           <p class="methodology-note">
-            Arena War measures <strong>iterative algorithm improvement under adversarial pressure</strong>: a model must read the task, write code, learn from reward signals, and produce stronger follow-up algorithms over repeated rounds. It does <strong>not</strong> claim to measure general coding ability from one chart. Cross-model comparison is meaningful here because the protocol is shared across the run. For deeper methodology, see <a href="benchmark-methodology.md" target="_blank" rel="noopener noreferrer">`benchmark-methodology.md`</a>.
+            Arena War measures <strong>iterative algorithm improvement under adversarial pressure</strong>: a model must read the task, write code, learn from reward signals, and produce stronger follow-up algorithms over repeated rounds. It does <strong>not</strong> claim to measure general coding ability from one chart. Cross-model comparison is meaningful here because the protocol is shared across the run. For deeper methodology, see <a href="benchmark-methodology.md" target="_blank" rel="noopener noreferrer">benchmark-methodology.md</a>.
           </p>
         </section>
 
-        <section class="section panel">
+        <section class="section panel animate-in animate-in-delay-2">
           <div class="panel-title">Benchmark Summary</div>
           <p class="section-copy">Use this row as the top-line read: who finished strongest, how many models were compared, and how much benchmark evidence this run contains.</p>
           <div id="summary-grid" class="grid summary-grid"></div>
         </section>
 
-        <section class="section panel">
+        <section class="section panel animate-in animate-in-delay-2">
           <div class="panel-title">Comparison Verdict</div>
           <p class="section-copy">A good result is primarily relative: stronger final performance and faster improvement than peers on the same run.</p>
           <div id="verdict-grid" class="grid verdict-grid"></div>
         </section>
 
-        <section class="section panel">
+        <section class="section panel animate-in animate-in-delay-3">
           <div class="panel-title">Shared Protocol</div>
           <p class="section-copy">This strip explains why the comparison is apples-to-apples. Every model shown below was evaluated under this same run configuration.</p>
           <div id="protocol-grid" class="grid summary-grid"></div>
         </section>
 
-        <section class="section panel">
+        <section class="section panel animate-in animate-in-delay-3">
           <div class="panel-title">Model Comparison Table</div>
           <p class="section-copy">Read this before drilling into individual iterations. It shows who finished best, who improved most, and how each run ended.</p>
           <div class="comparison-table-wrap">
@@ -256,16 +751,35 @@
           <p class="small-note">Ranking is ordered by strongest best result first. Ties fall to the earlier best iteration.</p>
         </section>
 
-        <section class="section panel">
+        <section class="section panel animate-in animate-in-delay-4">
           <div class="panel-title">Learning Curves</div>
-          <div class="chart-wrap">
-            <svg id="learning-curve" viewBox="0 0 900 300" preserveAspectRatio="xMidYMid meet"></svg>
+          <div class="chart-wrap" id="chart-container" style="position:relative;">
+            <svg id="learning-curve" viewBox="0 0 900 320" preserveAspectRatio="xMidYMid meet"></svg>
+            <div id="chart-tooltip" class="chart-tooltip"></div>
           </div>
           <div id="chart-legend" class="chart-legend"></div>
-          <p class="small-note">Each line shows mean territory percentage by eval iteration for one model. The main read is relative trajectory: who improves fastest and who ends strongest.</p>
+          <p class="small-note">Each line shows mean territory percentage by eval iteration for one model. Shaded bands show &plusmn;1 std dev when available. The main read is relative trajectory: who improves fastest and who ends strongest.</p>
         </section>
 
-        <section class="section panel">
+        <!-- TODO: Populate with actual head-to-head matchup data when available -->
+        <section class="section panel animate-in animate-in-delay-4">
+          <div class="panel-title">Head-to-Head Matrix</div>
+          <p class="section-copy">Win-rate matrix across models when their best algorithms face each other directly. Requires at least two model runs in the same eval.</p>
+          <div id="head-to-head-matrix" class="placeholder-grid">
+            <div class="placeholder-cell">Matrix will populate when multi-model data is available</div>
+          </div>
+        </section>
+
+        <!-- TODO: Populate with actual failure taxonomy data when available -->
+        <section class="section panel animate-in animate-in-delay-4">
+          <div class="panel-title">Failure Taxonomy</div>
+          <p class="section-copy">Breakdown of why iterations failed or stalled: extraction errors, runtime crashes, plateau stops, and other failure modes by model.</p>
+          <div id="failure-taxonomy" class="placeholder-grid">
+            <div class="placeholder-cell">Failure taxonomy chart will populate when annotated failure data is available</div>
+          </div>
+        </section>
+
+        <section class="section panel animate-in animate-in-delay-5">
           <div class="panel-title">Inspect A Model Run</div>
           <div class="toolbar">
             <label>
@@ -279,7 +793,7 @@
           </div>
         </section>
 
-        <section class="section grid detail-grid">
+        <section class="section grid detail-grid animate-in animate-in-delay-5">
           <div class="grid" style="gap:16px">
             <div class="panel">
               <div class="panel-title">Model Summary</div>
@@ -305,7 +819,9 @@
 
             <div class="panel">
               <div class="panel-title">Generated Algorithm</div>
-              <pre id="code-viewer"></pre>
+              <div class="code-viewer-wrap">
+                <pre id="code-viewer"></pre>
+              </div>
             </div>
           </div>
 
@@ -314,7 +830,7 @@
               <div class="panel-title">Representative Board Snapshot</div>
               <canvas id="snapshot-canvas" width="320" height="320"></canvas>
               <div id="snapshot-meta" class="meta-list" style="margin-top:12px"></div>
-              <p class="small-note">This snapshot is a representative game from the selected eval iteration, chosen to sit closest to that iteration’s mean score.</p>
+              <p class="small-note">This snapshot is a representative game from the selected eval iteration, chosen to sit closest to that iteration's mean score.</p>
             </div>
 
             <div class="panel">
