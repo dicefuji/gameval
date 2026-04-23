@@ -38,6 +38,12 @@ const DEFAULT_PLATEAU_MIN_IMPROVEMENT = 1;
 const DEFAULT_MODE = 'self-play';
 const DEFAULT_GAME = 'arena-war';
 
+const EVAL_VERSION = 'arena-war-eval-v0.2.0';
+const CHANGELOG = [
+  'v0.2.0: Added failure taxonomy, OpenAI provider support, adversarial mode, statistical rigor',
+  'v0.1.0: Initial eval harness with Anthropic-only, self-play mode',
+];
+
 function seededRandom(seed) {
   // Simple LCG: returns a function that generates [0,1) floats deterministically
   let s = seed || 1;
@@ -97,20 +103,30 @@ function runGame(size, algos, opts = {}) {
   const claimsPerTick = Math.max(1, Math.floor(size / 8));
   let tick = 0;
   const MAX_TICKS = size * size;
+  const perPlayerFlags = Array.from({ length: nPlayers }, () => new Set());
 
   while (tick < MAX_TICKS) {
     const claimMap = new Map();
     for (let i = 0; i < nPlayers; i++) {
       let frontier;
+      let tickCrashed = false;
+      const t0 = Date.now();
       try { frontier = algos[i](i, grid.map(r => [...r]), size); }
-      catch { frontier = []; }
+      catch { frontier = []; tickCrashed = true; }
+      if (tickCrashed) perPlayerFlags[i].add('RUNTIME_CRASH');
+      if (Date.now() - t0 > 50) perPlayerFlags[i].add('TIMEOUT');
       if (!Array.isArray(frontier)) frontier = [];
       let claimed = 0;
       for (const cell of frontier) {
         if (claimed >= claimsPerTick) break;
         if (!Array.isArray(cell) || cell.length < 2) continue;
         const [r, c] = cell;
-        if (r < 0 || r >= size || c < 0 || c >= size || grid[r][c] !== EMPTY) continue;
+        if (r < 0 || r >= size || c < 0 || c >= size) continue;
+        if (grid[r][c] === null) {
+          perPlayerFlags[i].add('EXPLOIT_DETECTED');
+          continue;
+        }
+        if (grid[r][c] !== EMPTY) continue;
         const k = r * 10000 + c;
         if (!claimMap.has(k)) { claimMap.set(k, [r, c, i]); claimed++; }
         else if (claimMap.get(k)[2] !== i) claimMap.set(k, [r, c, -2]);
@@ -137,6 +153,7 @@ function runGame(size, algos, opts = {}) {
     totalCells: total,
     ticks: tick,
     finalGrid: captureFinalGrid ? grid.map(row => [...row]) : undefined,
+    perPlayerFlags: perPlayerFlags.map(set => [...set]),
   };
 }
 
@@ -328,7 +345,9 @@ async function runSingleIteration({
       promptFeedback,
       error: error.message,
       rawCode,
+      failureFlags: ['SYNTAX_ERROR'],
     };
+    console.log(`  \u26A0 Failure flags: SYNTAX_ERROR`);
     state.plateauStreak = plateauStreak + 1;
     if (state.plateauStreak >= plateauPatience) {
       state.stopped = true;
@@ -337,11 +356,13 @@ async function runSingleIteration({
     return { iterationResult, updatedState: state };
   }
 
+  const flags = new Set();
   const gameRuns = [];
   for (let gameIndex = 0; gameIndex < gamesPerIter; gameIndex++) {
     const algos = [modelFn, ...baselineOpponents.map(entry => entry.fn)];
     const seed = modelIndex * 1000 + iter * 100 + gameIndex;
     const result = runGame(gridSize, algos, { captureFinalGrid: true, seed });
+    (result.perPlayerFlags[0] || []).forEach(f => flags.add(f));
     const pct = Math.round((result.scores[0] / result.totalCells) * 100);
     const winnerIndex = result.scores.indexOf(Math.max(...result.scores));
     gameRuns.push({
@@ -365,6 +386,9 @@ async function runSingleIteration({
   const improvementFromLastIter = lastSuccessfulAvgPct === null ? null : avgPct - lastSuccessfulAvgPct;
   const improvementFromBestBeforeIter = currentWinner ? avgPct - currentWinner.avgPct : null;
 
+  if (lastSuccessfulAvgPct !== null && avgPct < lastSuccessfulAvgPct) flags.add('REGRESSION_VS_PRIOR');
+  if (currentWinner && avgPct < currentWinner.avgPct) flags.add('REGRESSION_VS_BEST');
+
   const iterationResult = {
     iter,
     promptMode: promptFeedback.promptMode,
@@ -379,6 +403,7 @@ async function runSingleIteration({
     baselineOpponents: baselineOpponents.map(entry => entry.name),
     games: gameRuns.map(({ finalGrid, ...rest }) => rest),
     representativeGame,
+    failureFlags: [...flags],
   };
 
   state.iterations.push(iterationResult);
@@ -403,7 +428,18 @@ async function runSingleIteration({
 
   state.plateauStreak = meaningfulImprovement ? 0 : plateauStreak + 1;
   state.lastSuccessfulAvgPct = avgPct;
+
+  if (state.plateauStreak >= plateauPatience) {
+    if (!iterationResult.failureFlags.includes('STALE')) {
+      iterationResult.failureFlags.push('STALE');
+    }
+  }
+
   console.log(`  → Avg: ${avgPct}% (std: ${stats.stdPct.toFixed(1)}%, CI95: [${stats.ci95Low.toFixed(1)}%, ${stats.ci95High.toFixed(1)}%])`);
+
+  if (iterationResult.failureFlags.length > 0) {
+    console.log(`  \u26A0 Failure flags: ${iterationResult.failureFlags.join(', ')}`);
+  }
 
   if (state.plateauStreak >= plateauPatience && iter < maxIterations) {
     state.stopped = true;
@@ -580,9 +616,12 @@ async function runEval(opts = {}) {
   const benchmarkResults = {
     generatedAt: new Date().toISOString(),
     schemaVersion: 2,
+    evalVersion: EVAL_VERSION,
+    changelog: CHANGELOG,
     protocol: {
       comparisonMode: 'shared_protocol_benchmark',
       frontendPrimarySurface: 'results.html',
+      evalVersion: EVAL_VERSION,
       mode: effectiveMode,
       game,
       gamesPerIter,
