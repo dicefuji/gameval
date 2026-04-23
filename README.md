@@ -99,19 +99,28 @@ Runs the actual benchmark loop. It is responsible for:
 4. recording reward signals and learning curves
 5. stopping when the run hits the iteration cap or plateaus
 6. annotating each iteration with a `failureFlags` array covering syntax errors, runtime crashes, timeouts, out-of-bounds exploits, regressions, and plateau stalls
-7. writing a comparison-friendly `eval-results.json` tagged with `evalVersion`, `changelog`, and `schemaVersion` (currently `3`)
+7. dumping the top-level `runSeed` and a per-game `seed` on every `gameRuns[]` entry so any run can be replayed bit-for-bit
+8. computing bootstrap 95% CIs for every model pair (`pairwiseComparisons`), opponent-aware Bradley-Terry / Elo ratings (`ratings`), a real best-vs-best `headToHead` matrix, and a held-out `referenceBenchmark` whose source is never exposed in prompts or output
+9. supporting `--plateau-mode ci_overlap` (default) where an iteration is only a meaningful gain when its CI95 lower bound clears the best-so-far's CI95 upper bound; falls back to `fixed_threshold` when stats are missing
+10. writing a comparison-friendly `eval-results.json` tagged with `evalVersion`, `changelog`, and `schemaVersion` (currently `4`)
 
 ### `prompts.js`
 Defines the first-round prompt and the iterative prompt. Later prompts reuse the current leader, leaderboard, and recent game history so that models can improve based on what they learned.
 
 ### `results.html` and `results.js`
-Read `eval-results.json` and present the benchmark as a comparison product: learning curves, protocol/trust metadata, relative comparison verdicts, per-iteration inspection, representative board snapshots, final model rankings, a per-model Failure Taxonomy panel (bar rows per flag with a one-sentence summary), and a page-header version badge whose hover tooltip shows the full eval changelog.
+Read `eval-results.json` and present the benchmark as a comparison product: learning curves, protocol/trust metadata (including run seed and plateau mode), relative comparison verdicts, pairwise bootstrap CI notes under the comparison table, an opponent-aware Bradley-Terry / Elo ratings table, a real best-vs-best head-to-head delta matrix with bootstrap CI highlighting, a held-out reference benchmark panel, per-iteration inspection, representative board snapshots, final model rankings, a per-model Failure Taxonomy panel (bar rows per flag with a one-sentence summary), and a page-header version badge whose hover tooltip shows the full eval changelog.
 
 ### `arena.html`, `engine.js`, and `ui.js`
 Provide the manual arena sandbox. This is where algorithms can be watched and inspected directly, and where best-vs-best replay modes can later live.
 
 ### `algorithms.js`
 Contains the shared baseline opponents used by the benchmark. These are the fixed strategies that keep the comparison fair across models.
+
+### `reference-algorithms.js`
+Holds the held-out reference algorithm used as a cross-version anchor. The source is intentionally **not** required by `prompts.js`, `algorithms.js`, or any other file a model can read; only the reference name and per-model outcome appear in `eval-results.json`.
+
+### `scripts/generate-fixture.js`
+Builds a v0.3.0 `eval-results.json` fixture without calling any LLM, using baseline algorithms as stand-ins for model output. Useful for dashboard development and visual verification without burning API credits.
 
 ---
 
@@ -173,6 +182,15 @@ npm run eval:quick
 
 # Run a multi-model comparison
 npm run eval -- --model claude-sonnet-4-20250514 --model gpt-4o
+
+# Reproducible run: pin the top-level run seed
+npm run eval -- --seed 424242 --model claude-sonnet-4-20250514 --model gpt-4o
+
+# Use the legacy fixed-threshold plateau rule instead of CI overlap
+npm run eval -- --plateau-mode fixed_threshold --plateau-min-improvement 2
+
+# Regenerate a synthetic v0.3.0 eval-results.json for dashboard development (no LLM calls)
+node scripts/generate-fixture.js
 ```
 
 The runner writes `eval-results.json` in the repo root. Reload `results.html` after a run to inspect the output.
