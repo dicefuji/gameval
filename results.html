@@ -617,6 +617,74 @@
       border-color: var(--border-hover);
     }
 
+    /* ─── Failure Taxonomy ─── */
+    .failure-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 12px;
+    }
+
+    .failure-card {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      padding: 14px 14px 12px;
+      transition: background var(--transition-fast), border-color var(--transition-fast);
+    }
+
+    .failure-card:hover {
+      border-color: var(--border-hover);
+    }
+
+    .failure-card-title {
+      font-weight: 600;
+      color: var(--text-primary);
+      font-size: 13px;
+      margin-bottom: 10px;
+    }
+
+    .failure-bar-row {
+      display: grid;
+      grid-template-columns: 140px 1fr 32px;
+      align-items: center;
+      gap: 8px;
+      font-size: 11px;
+      color: var(--text-secondary);
+      margin-bottom: 6px;
+    }
+
+    .failure-bar-track {
+      height: 8px;
+      background: var(--bg-chip);
+      border-radius: 999px;
+      overflow: hidden;
+    }
+
+    .failure-bar-fill {
+      height: 100%;
+      border-radius: 999px;
+      transition: width var(--transition-fast);
+    }
+
+    .failure-bar-count {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      color: var(--text-primary);
+    }
+
+    .failure-summary {
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-top: 10px;
+      line-height: 1.5;
+    }
+
+    .failure-empty {
+      font-size: 12px;
+      color: var(--text-muted);
+      font-style: italic;
+    }
+
     /* ─── SVG interactions ─── */
     .chart-point {
       transition: r var(--transition-fast);
@@ -814,13 +882,11 @@
           </div>
         </section>
 
-        <!-- TODO: Populate with actual failure taxonomy data when available -->
         <section class="section panel animate-in animate-in-delay-4">
           <div class="panel-title">Failure Taxonomy</div>
-          <p class="section-copy">Breakdown of why iterations failed or stalled: extraction errors, runtime crashes, plateau stops, and other failure modes by model.</p>
-          <div id="failure-taxonomy" class="placeholder-grid">
-            <div class="placeholder-cell">Failure taxonomy chart will populate when annotated failure data is available</div>
-          </div>
+          <p class="section-copy">How often each model's iterations hit an annotated failure mode: extraction errors, runtime crashes, out-of-bounds exploits, timeouts, regressions, and plateau stalls. Use this to distinguish models that scored well from models that scored well <em>and</em> stayed stable.</p>
+          <div id="failure-taxonomy" class="failure-grid"></div>
+          <p class="small-note">Counts are per-iteration occurrences across this run. An iteration may carry multiple flags (e.g. a regression that also stalled).</p>
         </section>
 
         <section class="section panel animate-in animate-in-delay-5">
