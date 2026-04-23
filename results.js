@@ -30,6 +30,9 @@
   const snapshotMeta = document.getElementById('snapshot-meta');
   const followOn = document.getElementById('follow-on');
   const headToHeadMatrix = document.getElementById('head-to-head-matrix');
+  const ratingsTable = document.getElementById('ratings-table');
+  const referenceBenchmarkEl = document.getElementById('reference-benchmark');
+  const pairwiseNote = document.getElementById('pairwise-note');
   const failureTaxonomy = document.getElementById('failure-taxonomy');
   const versionBadge = document.getElementById('version-badge');
   const chartTooltip = document.getElementById('chart-tooltip');
@@ -272,11 +275,14 @@
     renderVerdicts();
     renderProtocol();
     renderComparisonTable();
+    renderPairwiseNote();
+    renderRatings();
     renderChart();
     renderSelectors();
     renderSelectedRun();
     renderFollowOn();
     renderHeadToHeadMatrix();
+    renderReferenceBenchmark();
     renderFailureTaxonomy();
   }
 
@@ -345,17 +351,105 @@
   function renderProtocol() {
     const protocol = state.results.protocol || {};
     const evalVersion = state.results.evalVersion || protocol.evalVersion;
+    const plateauModeLabel = protocol.plateauMode === 'ci_overlap'
+      ? `CI-overlap (patience ${protocol.plateauPatience ?? 'n/a'})`
+      : protocol.plateauMode === 'fixed_threshold'
+        ? `Fixed threshold ≥ ${protocol.plateauMinImprovement ?? 'n/a'}% (patience ${protocol.plateauPatience ?? 'n/a'})`
+        : (protocol.plateauPatience == null ? 'n/a' : `${protocol.plateauPatience} rounds, ${protocol.plateauMinImprovement ?? 'n/a'}% min gain`);
+    const runSeed = protocol.runSeed ?? state.results.runSeed;
     protocolGrid.innerHTML = [
       metaItem('Run timestamp', formatDate(state.results.generatedAt)),
       metaItem('Eval version', evalVersion ?? 'n/a'),
       metaItem('Eval schema version', state.results.schemaVersion ?? 'n/a'),
+      metaItem('Run seed', runSeed != null ? String(runSeed) : 'n/a'),
       metaItem('Grid size', protocol.gridSize ?? 'n/a'),
       metaItem('Player count', protocol.nPlayers ?? 'n/a'),
       metaItem('Games per iteration', protocol.gamesPerIter ?? 'n/a'),
       metaItem('Target iterations', protocol.maxIterations ?? 'n/a'),
-      metaItem('Plateau policy', protocol.plateauPatience == null ? 'n/a' : `${protocol.plateauPatience} rounds, ${protocol.plateauMinImprovement ?? 'n/a'}% min gain`),
+      metaItem('Plateau policy', plateauModeLabel),
       metaItem('Baseline opponents', Array.isArray(protocol.baselineOpponents) && protocol.baselineOpponents.length ? protocol.baselineOpponents.join(', ') : 'n/a'),
     ].join('');
+  }
+
+  function renderPairwiseNote() {
+    if (!pairwiseNote) return;
+    const pairs = Array.isArray(state.results.pairwiseComparisons) ? state.results.pairwiseComparisons : [];
+    if (pairs.length === 0) {
+      pairwiseNote.hidden = true;
+      pairwiseNote.innerHTML = '';
+      return;
+    }
+    const lines = pairs.map(pair => {
+      const delta = Number.isFinite(pair.meanDelta) ? pair.meanDelta.toFixed(1) : '?';
+      const lo = Number.isFinite(pair.ciLow) ? pair.ciLow.toFixed(1) : '?';
+      const hi = Number.isFinite(pair.ciHigh) ? pair.ciHigh.toFixed(1) : '?';
+      const sigClass = pair.significant ? 'pairwise-sig' : '';
+      let verdict;
+      if (pair.verdict === 'a_better') verdict = `<span class="${sigClass}">${escapeHtml(pair.modelA)}</span> better than <span>${escapeHtml(pair.modelB)}</span>`;
+      else if (pair.verdict === 'b_better') verdict = `<span class="${sigClass}">${escapeHtml(pair.modelB)}</span> better than <span>${escapeHtml(pair.modelA)}</span>`;
+      else verdict = `<span>${escapeHtml(pair.modelA)}</span> vs <span>${escapeHtml(pair.modelB)}</span>: not distinguishable`;
+      return `<div class="pairwise-line">${verdict} &mdash; Δ = ${delta}% (95% bootstrap CI [${lo}, ${hi}])</div>`;
+    }).join('');
+    pairwiseNote.innerHTML = `<div><strong>Pairwise bootstrap (n=${pairs[0].bootstrapIterations ?? 'n/a'}):</strong></div>${lines}`;
+    pairwiseNote.hidden = false;
+  }
+
+  function renderRatings() {
+    if (!ratingsTable) return;
+    const ratings = state.results.ratings;
+    if (!ratings || !Array.isArray(ratings.entries) || ratings.entries.length === 0) {
+      ratingsTable.innerHTML = '<div class="placeholder-cell">Ratings require at least two players with recorded games.</div>';
+      return;
+    }
+    const rows = ratings.entries.map((e, idx) => `
+      <tr>
+        <td class="num">${idx + 1}</td>
+        <td class="kind-${escapeHtml(e.kind || 'baseline')}">${escapeHtml(e.player)} <span style="color:var(--text-secondary); font-weight:400; font-size:11px; margin-left:6px; text-transform:uppercase; letter-spacing:0.05em;">${escapeHtml(e.kind || 'baseline')}</span></td>
+        <td class="num">${Number.isFinite(e.elo) ? Math.round(e.elo) : 'n/a'}</td>
+        <td class="num">${e.games ?? 'n/a'}</td>
+        <td class="num">${Number.isFinite(e.wins) ? (Math.round(e.wins * 10) / 10) : 'n/a'}</td>
+      </tr>
+    `).join('');
+    ratingsTable.innerHTML = `
+      <table>
+        <thead>
+          <tr><th>Rank</th><th>Player</th><th style="text-align:right">Elo</th><th style="text-align:right">Games</th><th style="text-align:right">Wins</th></tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <p class="small-note" style="margin-top:10px;">Fit via Minorization-Maximization (${ratings.converged ? 'converged' : 'not fully converged'} in ${ratings.convergedIn} iterations). Draws and sparse matchups receive Laplace smoothing so sample-starved players don’t collapse to &minus;∞.</p>
+    `;
+  }
+
+  function renderReferenceBenchmark() {
+    if (!referenceBenchmarkEl) return;
+    const rb = state.results.referenceBenchmark;
+    if (!rb || !Array.isArray(rb.entries) || rb.entries.length === 0) {
+      referenceBenchmarkEl.innerHTML = `<div class="placeholder-cell">No reference benchmark in this run.</div>`;
+      return;
+    }
+    const cards = rb.entries.map(entry => {
+      const delta = Number.isFinite(entry.meanDelta) ? entry.meanDelta.toFixed(1) : '?';
+      const lo = Number.isFinite(entry.ciLow) ? entry.ciLow.toFixed(1) : '?';
+      const hi = Number.isFinite(entry.ciHigh) ? entry.ciHigh.toFixed(1) : '?';
+      const verdictLabel = entry.verdict === 'model_better'
+        ? 'Beats the reference (significant)'
+        : entry.verdict === 'reference_better'
+          ? 'Loses to the reference (significant)'
+          : 'Not distinguishable from the reference';
+      return `
+        <div class="reference-card">
+          <div class="ref-model">${escapeHtml(entry.model)}</div>
+          <div class="ref-line"><span>Model best (iter ${entry.iter})</span><strong>${entry.modelMeanPct}%</strong></div>
+          <div class="ref-line"><span>${escapeHtml(rb.referenceName)}</span><strong>${entry.referenceMeanPct}%</strong></div>
+          <div class="ref-line"><span>Delta (model − reference)</span><strong>${delta}% &middot; 95% CI [${lo}, ${hi}]</strong></div>
+          <div class="ref-line"><span>Wins vs reference</span><strong>${entry.winsVsReference} / ${entry.gamesPlayed}</strong></div>
+          <div class="ref-verdict verdict-${escapeHtml(entry.verdict)}">${verdictLabel}</div>
+        </div>
+      `;
+    }).join('');
+    const footer = `<p class="small-note" style="grid-column:1/-1;margin-top:0;">Reference source is held out of all prompts and eval-results.json (only the name &ldquo;${escapeHtml(rb.referenceName)}&rdquo; is recorded). Games per model: ${rb.gamesPerModel}.</p>`;
+    referenceBenchmarkEl.innerHTML = cards + footer;
   }
 
   function renderComparisonTable() {
@@ -659,30 +753,84 @@
   function renderHeadToHeadMatrix() {
     const rankings = state.results.rankings || [];
     if (rankings.length < 2) {
-      headToHeadMatrix.innerHTML = `
-        <div class="placeholder-cell">At least two model runs required for head-to-head matrix</div>
-      `;
+      headToHeadMatrix.innerHTML = `<div class="placeholder-cell">At least two model runs required for head-to-head matrix.</div>`;
       return;
     }
 
-    // TODO: Replace with actual head-to-head win-rate data when available in eval-results.json
-    const models = rankings.map(r => r.model);
-    const matrixHTML = models.map((rowModel, rowIdx) => {
-      const cells = models.map((colModel, colIdx) => {
-        if (rowIdx === colIdx) {
-          return `<div class="placeholder-cell" style="background:var(--bg-chip); font-weight:600;">—</div>`;
-        }
-        // Placeholder: would show win % of rowModel vs colModel
-        return `<div class="placeholder-cell">${escapeHtml(rowModel)} vs ${escapeHtml(colModel)}<br><span style="font-size:11px; color:var(--text-muted)">pending replay data</span></div>`;
-      }).join('');
-      return `<div style="display:contents">${cells}</div>`;
-    }).join('');
+    const h2h = state.results.headToHead;
+    const pairs = h2h && Array.isArray(h2h.pairs) ? h2h.pairs : [];
+    if (pairs.length === 0) {
+      headToHeadMatrix.innerHTML = `<div class="placeholder-cell">No head-to-head games were played in this run.</div>`;
+      return;
+    }
 
-    headToHeadMatrix.innerHTML = `
-      <div style="display:grid; grid-template-columns: repeat(${models.length}, minmax(140px, 1fr)); gap:10px; overflow-x:auto;">
-        ${matrixHTML}
-      </div>
-    `;
+    // Stable ordering: use the model order from h2h.entries when available,
+    // otherwise fall back to rankings.
+    const models = (h2h.entries || []).map(e => e.model).length
+      ? h2h.entries.map(e => e.model)
+      : rankings.map(r => r.model);
+
+    // Pull pair records into { [rowModel]: { [colModel]: {delta, sig, meanRow, meanCol, wins, games} } }
+    const lookup = {};
+    models.forEach(m => { lookup[m] = {}; });
+    pairs.forEach(p => {
+      if (!lookup[p.modelA] || !lookup[p.modelB]) return;
+      lookup[p.modelA][p.modelB] = {
+        delta: p.meanPctA - p.meanPctB,
+        ciLow: p.ciLow,
+        ciHigh: p.ciHigh,
+        significant: p.significant,
+        meanRow: p.meanPctA,
+        meanCol: p.meanPctB,
+        winsRow: p.winsA,
+        winsCol: p.winsB,
+        games: p.gamesPlayed,
+      };
+      lookup[p.modelB][p.modelA] = {
+        delta: p.meanPctB - p.meanPctA,
+        ciLow: p.ciLow != null ? -p.ciHigh : null,
+        ciHigh: p.ciHigh != null ? -p.ciLow : null,
+        significant: p.significant,
+        meanRow: p.meanPctB,
+        meanCol: p.meanPctA,
+        winsRow: p.winsB,
+        winsCol: p.winsA,
+        games: p.gamesPlayed,
+      };
+    });
+
+    const cols = models.length + 1;
+    const cells = [];
+    // Header row.
+    cells.push(`<div class="h2h-cell h2h-head"></div>`);
+    models.forEach(m => cells.push(`<div class="h2h-cell h2h-head">${escapeHtml(m)}</div>`));
+    // Body.
+    models.forEach(rowModel => {
+      cells.push(`<div class="h2h-cell h2h-head" style="text-align:right;">${escapeHtml(rowModel)}</div>`);
+      models.forEach(colModel => {
+        if (rowModel === colModel) {
+          cells.push(`<div class="h2h-cell h2h-diag">&mdash;</div>`);
+          return;
+        }
+        const entry = lookup[rowModel]?.[colModel];
+        if (!entry) {
+          cells.push(`<div class="h2h-cell h2h-diag">n/a</div>`);
+          return;
+        }
+        const sign = entry.delta >= 0 ? '+' : '';
+        const deltaStr = `${sign}${(Math.round(entry.delta * 10) / 10).toFixed(1)}%`;
+        const ciStr = (Number.isFinite(entry.ciLow) && Number.isFinite(entry.ciHigh))
+          ? `CI [${entry.ciLow.toFixed(1)}, ${entry.ciHigh.toFixed(1)}]`
+          : '';
+        cells.push(`<div class="h2h-cell${entry.significant ? ' h2h-sig' : ''}">
+          <div class="h2h-delta">${deltaStr}</div>
+          <span class="h2h-sub">${entry.winsRow}&ndash;${entry.winsCol} in ${entry.games}g</span>
+          <span class="h2h-sub">${ciStr}</span>
+        </div>`);
+      });
+    });
+
+    headToHeadMatrix.innerHTML = `<div class="h2h-grid" style="grid-template-columns: minmax(120px, auto) repeat(${models.length}, minmax(120px, 1fr));">${cells.join('')}</div>`;
   }
 
   /* ─── Failure Taxonomy ─── */

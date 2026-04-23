@@ -126,17 +126,26 @@
   - Summary sentence: "Model X had 2 runtime crashes and 1 regression; its failure profile suggests..."
 - Version badge in page header: "Arena War Eval v0.2.0" with hover tooltip showing changelog
 
-### Phase 8: Rating, Reference Anchors, & Plateau Rigor
-- **Status**: PENDING (post-Phase-7 backlog)
-- **Files**: `eval-runner.js`, `results.js`, `results.html`, `AGENTS.md`
+### Phase 8A: Visual Refactor (Thinking-Machines-inspired)
+- **Status**: COMPLETE
+- **Files**: `results.html`, `results.js`
+- **Goal**: Match Thinking Machines' research-post typography/layout/rigor while keeping the eval-arena framing (no "limitations" or "discussion" sections).
+- **Delivered**: Warm-beige default theme, Source Serif Pro body + Inter sans + JetBrains Mono code, centered ~720px reading column, sticky left TOC with auto-highlight on scroll, numbered "Figure N:" captions with interpretation prose.
+
+### Phase 8B: Rating, Reference Anchors, & Plateau Rigor
+- **Status**: COMPLETE
+- **Files**: `eval-runner.js`, `reference-algorithms.js`, `results.js`, `results.html`, `scripts/generate-fixture.js`, `AGENTS.md`, `README.md`
 - **Goal**: Move beyond raw territory % as the only outcome metric and tighten the statistical interpretation of plateaus.
-- **Scope**:
-  - Elo or opponent-aware rating: accumulate pairwise outcomes across games and iterations; expose rating + uncertainty in the comparison table and learning curve.
-  - Held-out reference algorithms: a frozen set of strong-but-private strategies that are never shared with models, used as a stable cross-version anchor.
-  - CI-overlap plateau detection: declare plateau only when the current iteration's CI95 overlaps the running best's CI95; store the reason in the iteration.
-  - Head-to-head matrix: run each model's best iteration against every other model's best iteration in a round-robin and populate the matrix panel.
-  - Multi-game delegation: fully route `eval-runner.js` through `games/<name>/index.js` and retire the duplicated root copies of `engine.js` / `algorithms.js` / `prompts.js`.
-- **Dependencies**: Phase 7 (failure taxonomy + versioning stable, which is needed before we start bumping eval versions for rating methodology changes).
+- **Delivered**:
+  - **B1 Reproducible seeds**: top-level `runSeed` + per-game `seed` written into `eval-results.json`; `--seed <n>` CLI flag.
+  - **B2 Bradley-Terry / Elo rating**: opponent-aware ratings fit across every model-vs-baseline pairwise outcome; Laplace-smoothed MM update; Elo-scaled output at 1000.
+  - **B3 CI-overlap plateau detection**: new default `--plateau-mode ci_overlap`; an iteration is only a meaningful gain when its CI95 low clears the best-so-far's CI95 high. Falls back to `fixed_threshold` when stats are missing.
+  - **B4 Held-out reference**: new `reference-algorithms.js`; source never exposed in prompts or output; per-model vs-reference benchmark with bootstrap CI.
+  - **B5 Bootstrap pairwise comparison**: every model-pair comparison reports bootstrap 95% CI on the mean-pct delta and a verdict, rendered under the comparison table.
+  - **B6 Real head-to-head matrix**: best-vs-best round-robin with shared baselines; delta matrix with bootstrap-CI highlighting.
+  - Schema bumped to v0.3.0 / `schemaVersion: 4`; dashboard wired for every new field.
+- **Deferred**:
+  - **B7 Multi-game delegation**: full routing of `eval-runner.js` through `games/<name>/index.js` (still open; tracked separately).
 
 ## Git Workflow
 - Pull `origin/main` before any agent starts work

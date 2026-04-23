@@ -22,6 +22,7 @@
 const fs = require('fs');
 const path = require('path');
 const { ALGOS, ALGO_NAMES } = require('./algorithms');
+const { REFERENCE: HELD_OUT_REFERENCE, REFERENCE_NAME: HELD_OUT_REFERENCE_NAME } = require('./reference-algorithms');
 const { BASELINE_PROMPT, buildIterativePrompt, buildAdversarialPrompt } = require('./prompts');
 const { callModel, validateProvider } = require('./providers');
 
@@ -35,14 +36,28 @@ const DEFAULT_GRID_SIZE = 60;
 const DEFAULT_N_PLAYERS = 4;
 const DEFAULT_PLATEAU_PATIENCE = 2;
 const DEFAULT_PLATEAU_MIN_IMPROVEMENT = 1;
+const DEFAULT_PLATEAU_MODE = 'ci_overlap';
 const DEFAULT_MODE = 'self-play';
 const DEFAULT_GAME = 'arena-war';
 
-const EVAL_VERSION = 'arena-war-eval-v0.2.0';
+const EVAL_VERSION = 'arena-war-eval-v0.3.0';
 const CHANGELOG = [
+  'v0.3.0: Reproducible run seed + per-game seeds in output, bootstrap pairwise comparison, CI-overlap plateau, Bradley-Terry ratings, real head-to-head matrix, held-out reference',
   'v0.2.0: Added failure taxonomy, OpenAI provider support, adversarial mode, statistical rigor',
   'v0.1.0: Initial eval harness with Anthropic-only, self-play mode',
 ];
+
+// Mix three small integers into a single deterministic 31-bit seed. Keeps
+// game-level seeds well-separated even when the inputs share digits.
+function deriveGameSeed(runSeed, modelIndex, iter, gameIndex) {
+  const a = (runSeed ^ 0x9e3779b1) >>> 0;
+  const b = ((modelIndex + 1) * 2654435761) >>> 0;
+  const c = ((iter + 1) * 40503) >>> 0;
+  const d = ((gameIndex + 1) * 2246822519) >>> 0;
+  const mixed = (a ^ b ^ c ^ d) >>> 0;
+  // LCG needs a non-zero seed; clamp to the 1..2147483646 range.
+  return (mixed % 2147483646) + 1;
+}
 
 function seededRandom(seed) {
   // Simple LCG: returns a function that generates [0,1) floats deterministically
@@ -75,20 +90,35 @@ function createGrid(size, nPlayers, mask, rng) {
   }
   const cx = Math.floor(size / 2), cy = Math.floor(size / 2);
   const baseRadius = Math.floor(size / 2);
+  // Wider radius band + stronger angle jitter so different seeds actually
+  // produce distinct starting configurations after rounding to grid cells.
   const seedRadius = rng
-    ? baseRadius * (0.50 + rng() * 0.10)
+    ? baseRadius * (0.45 + rng() * 0.30)
     : baseRadius * 0.55;
   const angleStep = (2 * Math.PI) / nPlayers;
-  for (let i = 0; i < nPlayers; i++) {
+  const angleJitterMax = angleStep * 0.35;
+
+  // Permute which player index occupies which seat so the same baseline
+  // algorithm can start from different positions across seeded runs.
+  const seatOrder = Array.from({ length: nPlayers }, (_, i) => i);
+  if (rng) {
+    for (let i = seatOrder.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      [seatOrder[i], seatOrder[j]] = [seatOrder[j], seatOrder[i]];
+    }
+  }
+
+  for (let seat = 0; seat < nPlayers; seat++) {
+    const playerId = seatOrder[seat];
     const angle = rng
-      ? angleStep * i - Math.PI / 2 + (rng() - 0.5) * 0.1
-      : angleStep * i - Math.PI / 2;
+      ? angleStep * seat - Math.PI / 2 + (rng() - 0.5) * 2 * angleJitterMax
+      : angleStep * seat - Math.PI / 2;
     const sr = Math.max(0, Math.min(size-1, Math.round(cx + seedRadius * Math.sin(angle))));
     const sc = Math.max(0, Math.min(size-1, Math.round(cy + seedRadius * Math.cos(angle))));
     for (const [dr, dc] of [[-1,0],[1,0],[0,-1],[0,1],[0,0],[-1,-1],[-1,1],[1,-1],[1,1]]) {
       const nr = sr + dr, nc = sc + dc;
       if (nr >= 0 && nr < size && nc >= 0 && nc < size && mask[nr][nc])
-        grid[nr][nc] = i;
+        grid[nr][nc] = playerId;
     }
   }
   return grid;
@@ -238,6 +268,376 @@ function computeStats(pcts) {
   return { meanPct: mean, stdPct: std, minPct, maxPct, ci95Low, ci95High, n };
 }
 
+// Bootstrap 95% CI on the difference of means between two pct samples.
+// Uses a deterministic LCG so re-runs of the same eval produce the same CI.
+function bootstrapDiffCI(pctsA, pctsB, { iterations = 4000, alpha = 0.05, seed = 1 } = {}) {
+  if (!pctsA || !pctsB || pctsA.length === 0 || pctsB.length === 0) return null;
+  const rng = seededRandom(seed);
+  const nA = pctsA.length, nB = pctsB.length;
+  const diffs = new Array(iterations);
+  for (let i = 0; i < iterations; i++) {
+    let sa = 0, sb = 0;
+    for (let j = 0; j < nA; j++) sa += pctsA[Math.floor(rng() * nA)];
+    for (let j = 0; j < nB; j++) sb += pctsB[Math.floor(rng() * nB)];
+    diffs[i] = sa / nA - sb / nB;
+  }
+  diffs.sort((x, y) => x - y);
+  const lowIdx = Math.max(0, Math.floor(alpha / 2 * iterations));
+  const highIdx = Math.min(iterations - 1, Math.floor((1 - alpha / 2) * iterations));
+  const meanA = pctsA.reduce((a, b) => a + b, 0) / nA;
+  const meanB = pctsB.reduce((a, b) => a + b, 0) / nB;
+  const meanDelta = meanA - meanB;
+  const ciLow = diffs[lowIdx];
+  const ciHigh = diffs[highIdx];
+  const significant = ciLow > 0 || ciHigh < 0;
+  return {
+    meanDelta,
+    ciLow,
+    ciHigh,
+    significant,
+    method: 'bootstrap_mean_diff',
+    bootstrapIterations: iterations,
+    alpha,
+    nA,
+    nB,
+  };
+}
+
+// Fit Bradley-Terry ratings via the Minorization-Maximization update:
+//   r_i_new = W_i / sum_{j != i} (N_ij / (r_i + r_j))
+// where W_i is i's total pairwise wins (draws count as 0.5) and N_ij is
+// the number of pairings between i and j. Converts to an Elo-like scale
+// (400 * log10) anchored so the mean rating equals 1000.
+function fitBradleyTerry(wins, games, { maxIter = 500, tol = 1e-7 } = {}) {
+  const players = Object.keys(wins);
+  if (players.length < 2) return { ratings: {}, convergedIn: 0, converged: true };
+  const W = Object.fromEntries(players.map(p => [p, Object.values(wins[p]).reduce((s, v) => s + v, 0)]));
+  let r = Object.fromEntries(players.map(p => [p, 1]));
+
+  let iter = 0;
+  let converged = false;
+  for (; iter < maxIter; iter++) {
+    const rNew = {};
+    for (const i of players) {
+      let denom = 0;
+      for (const j of players) {
+        if (i === j) continue;
+        const nij = (games[i]?.[j] || 0);
+        if (nij === 0) continue;
+        denom += nij / (r[i] + r[j]);
+      }
+      rNew[i] = denom > 0 ? (W[i] || 0) / denom : r[i];
+      if (!Number.isFinite(rNew[i]) || rNew[i] <= 0) rNew[i] = 1e-6;
+    }
+    // Normalize so the geometric mean of ratings is 1.
+    const logSum = players.reduce((s, p) => s + Math.log(rNew[p]), 0);
+    const logGm = logSum / players.length;
+    const scale = Math.exp(-logGm);
+    for (const p of players) rNew[p] *= scale;
+
+    let maxDelta = 0;
+    for (const p of players) maxDelta = Math.max(maxDelta, Math.abs(rNew[p] - r[p]));
+    r = rNew;
+    if (maxDelta < tol) { converged = true; iter++; break; }
+  }
+
+  // Elo: 400 * log10(r) + 1000 anchor (r-geomean is already 1 → 1000 baseline).
+  const elo = Object.fromEntries(players.map(p => [p, 1000 + 400 * Math.log10(r[p])]));
+  return { ratings: r, elo, convergedIn: iter, converged };
+}
+
+// Extract pairwise win/loss records from every iteration's games.
+// Slot 0 is the model (tracked by model key); slots 1..N-1 are baselines
+// (tracked by their canonical names). Draws count as 0.5 wins to each side.
+function computeBradleyTerryRatings(modelsObj, runSeed) {
+  const wins = {};
+  const games = {};
+  // draws[a][b] counts the number of actual draw games between a and b.
+  // Tracked separately so Laplace smoothing below can't corrupt it.
+  const draws = {};
+
+  const ensure = (name) => {
+    if (!wins[name]) { wins[name] = {}; games[name] = {}; draws[name] = {}; }
+  };
+  const addResult = (winner, loser, wVal = 1) => {
+    ensure(winner); ensure(loser);
+    wins[winner][loser] = (wins[winner][loser] || 0) + wVal;
+    games[winner][loser] = (games[winner][loser] || 0) + 1;
+    games[loser][winner] = (games[loser][winner] || 0) + 1;
+    if (!wins[loser][winner]) wins[loser][winner] = 0;
+  };
+
+  for (const [modelKey, result] of Object.entries(modelsObj)) {
+    const baselineNames = (result.baselineOpponents || []);
+    const iterations = result.iterations || [];
+    for (const iter of iterations) {
+      if (!Array.isArray(iter.games)) continue;
+      const participants = [modelKey, ...baselineNames];
+      for (const g of iter.games) {
+        if (!Array.isArray(g.scores) || g.scores.length !== participants.length) continue;
+        for (let i = 0; i < participants.length; i++) {
+          for (let j = i + 1; j < participants.length; j++) {
+            const pi = participants[i], pj = participants[j];
+            const si = g.scores[i], sj = g.scores[j];
+            if (!Number.isFinite(si) || !Number.isFinite(sj)) continue;
+            if (si > sj) addResult(pi, pj, 1);
+            else if (sj > si) addResult(pj, pi, 1);
+            else {
+              addResult(pi, pj, 0.5);
+              // Counter-side half-win; addResult above already records game.
+              wins[pj][pi] = (wins[pj][pi] || 0) + 0.5;
+              ensure(pi); ensure(pj);
+              draws[pi][pj] = (draws[pi][pj] || 0) + 1;
+              draws[pj][pi] = (draws[pj][pi] || 0) + 1;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Laplace smoothing: one phantom tie between every unordered pair of
+  // players. Prevents degenerate zero-win cases from dragging Elo to -inf
+  // and helps the MM iterations converge when sample sizes are tiny.
+  const allPlayers = Object.keys(wins);
+  for (let i = 0; i < allPlayers.length; i++) {
+    for (let j = i + 1; j < allPlayers.length; j++) {
+      const pi = allPlayers[i], pj = allPlayers[j];
+      wins[pi][pj] = (wins[pi][pj] || 0) + 0.5;
+      wins[pj][pi] = (wins[pj][pi] || 0) + 0.5;
+      games[pi][pj] = (games[pi][pj] || 0) + 1;
+      games[pj][pi] = (games[pj][pi] || 0) + 1;
+    }
+  }
+
+  const fit = fitBradleyTerry(wins, games);
+  const modelKeys = new Set(Object.keys(modelsObj));
+  const entries = Object.keys(fit.ratings || {}).map(player => {
+    const totalGames = Object.values(games[player] || {}).reduce((s, v) => s + v, 0);
+    const totalWins = Object.values(wins[player] || {}).reduce((s, v) => s + v, 0);
+    const elo = fit.elo?.[player];
+    return {
+      player,
+      kind: modelKeys.has(player) ? 'model' : 'baseline',
+      btScore: fit.ratings[player],
+      elo: Number.isFinite(elo) ? Math.round(elo * 10) / 10 : null,
+      games: totalGames,
+      wins: totalWins,
+      draws: Object.values(draws[player] || {}).reduce((s, v) => s + v, 0),
+    };
+  }).sort((a, b) => (b.elo ?? -Infinity) - (a.elo ?? -Infinity));
+
+  return {
+    method: 'bradley_terry_mm',
+    entries,
+    convergedIn: fit.convergedIn,
+    converged: fit.converged,
+    runSeed,
+  };
+}
+
+// Score each model's best algorithm against the held-out reference in a
+// dedicated set of seeded games. The reference source is never exposed in
+// prompts or the output JSON -- only its name and the per-model outcome are
+// published. This provides a cross-version anchor that's independent of the
+// shifting baseline pool or model fleet.
+function runHeldOutReferenceBenchmark(modelsObj, baselinePool, { gridSize, nPlayers, gamesPerModel, runSeed }) {
+  const entries = Object.entries(modelsObj)
+    .map(([model, result]) => {
+      const best = result?.summary?.bestIteration;
+      if (!best?.rawCode) return null;
+      try {
+        const fn = extractFunction(best.rawCode);
+        return { model, fn, iter: best.iter, algoName: best.algoName, bestAvgPct: best.avgPct };
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean);
+
+  if (entries.length === 0) {
+    return {
+      referenceName: HELD_OUT_REFERENCE_NAME,
+      note: 'Reference source held out of all prompts and outputs.',
+      gamesPerModel,
+      entries: [],
+    };
+  }
+
+  const fillerBaselines = baselinePool.slice(0, Math.max(0, nPlayers - 2)).map(b => b.fn);
+  const results = [];
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i];
+    const games = [];
+    for (let g = 0; g < gamesPerModel; g++) {
+      const seed = ((runSeed ^ ((i + 1) * 2246822519)) ^ ((g + 1) * 40503) ^ 0x13579bdf) >>> 0 || 1;
+      const algos = [entry.fn, HELD_OUT_REFERENCE, ...fillerBaselines];
+      let outcome;
+      try {
+        outcome = runGame(gridSize, algos, { captureFinalGrid: false, seed });
+      } catch {
+        continue;
+      }
+      const total = outcome.totalCells || 1;
+      const pctModel = Math.round((outcome.scores[0] / total) * 100);
+      const pctRef = Math.round((outcome.scores[1] / total) * 100);
+      games.push({ seed, pctModel, pctReference: pctRef, scores: outcome.scores, ticks: outcome.ticks });
+    }
+    if (games.length === 0) continue;
+    const modelPcts = games.map(g => g.pctModel);
+    const refPcts = games.map(g => g.pctReference);
+    const wins = modelPcts.filter((pm, idx) => pm > refPcts[idx]).length;
+    const ciSeed = ((runSeed ^ ((i + 1) * 2971215073)) ^ 0xabcdef01) >>> 0 || 1;
+    const ci = bootstrapDiffCI(modelPcts, refPcts, { seed: ciSeed });
+    let verdict = 'tied';
+    if (ci?.significant) verdict = ci.meanDelta > 0 ? 'model_better' : 'reference_better';
+    results.push({
+      model: entry.model,
+      iter: entry.iter,
+      algoName: entry.algoName,
+      gamesPlayed: games.length,
+      winsVsReference: wins,
+      modelMeanPct: Math.round(modelPcts.reduce((a, b) => a + b, 0) / modelPcts.length * 10) / 10,
+      referenceMeanPct: Math.round(refPcts.reduce((a, b) => a + b, 0) / refPcts.length * 10) / 10,
+      meanDelta: ci?.meanDelta ?? null,
+      ciLow: ci?.ciLow ?? null,
+      ciHigh: ci?.ciHigh ?? null,
+      significant: ci?.significant ?? false,
+      verdict,
+      games,
+    });
+  }
+
+  return {
+    referenceName: HELD_OUT_REFERENCE_NAME,
+    note: 'Reference source is held out of all prompts and eval-results.json.',
+    gamesPerModel,
+    entries: results,
+  };
+}
+
+// Run best-vs-best head-to-head games between every pair of models and
+// summarize the matrix for the dashboard. Slots 0/1 are the two model
+// algorithms; remaining slots are filled from the shared baseline pool so
+// the opponent mix is identical across pairs.
+function runHeadToHeadMatrix(modelsObj, baselinePool, { gridSize, nPlayers, gamesPerPair, runSeed, game }) {
+  const entries = Object.entries(modelsObj)
+    .map(([model, result]) => {
+      const best = result?.summary?.bestIteration;
+      if (!best?.rawCode) return null;
+      try {
+        const fn = extractFunction(best.rawCode);
+        return { model, fn, iter: best.iter, bestAvgPct: best.avgPct, algoName: best.algoName };
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean);
+
+  if (entries.length < 2) return { entries: entries.map(e => ({ model: e.model, iter: e.iter })), pairs: [] };
+
+  const baselineFns = baselinePool.slice(0, Math.max(0, nPlayers - 2)).map(b => b.fn);
+  const pairs = [];
+  for (let i = 0; i < entries.length; i++) {
+    for (let j = i + 1; j < entries.length; j++) {
+      const a = entries[i], b = entries[j];
+      const gameRecords = [];
+      for (let g = 0; g < gamesPerPair; g++) {
+        // Deterministic seed per (pair, game).
+        const pairSeed = ((runSeed ^ ((i + 1) * 374761393)) ^ ((j + 1) * 668265263) ^ ((g + 1) * 40503)) >>> 0 || 1;
+        const algos = [a.fn, b.fn, ...baselineFns];
+        let result;
+        try {
+          result = runGame(gridSize, algos, { captureFinalGrid: false, seed: pairSeed });
+        } catch {
+          continue;
+        }
+        const total = result.totalCells || 1;
+        const pctA = Math.round((result.scores[0] / total) * 100);
+        const pctB = Math.round((result.scores[1] / total) * 100);
+        gameRecords.push({ seed: pairSeed, pctA, pctB, scores: result.scores, ticks: result.ticks });
+      }
+      if (gameRecords.length === 0) continue;
+      const pctsA = gameRecords.map(r => r.pctA);
+      const pctsB = gameRecords.map(r => r.pctB);
+      const meanA = pctsA.reduce((x, y) => x + y, 0) / pctsA.length;
+      const meanB = pctsB.reduce((x, y) => x + y, 0) / pctsB.length;
+      const winsA = pctsA.filter((pa, idx) => pa > pctsB[idx]).length;
+      const winsB = pctsB.filter((pb, idx) => pb > pctsA[idx]).length;
+      const draws = gameRecords.length - winsA - winsB;
+      const ciSeed = ((runSeed ^ ((i + 1) * 1013904223)) ^ ((j + 1) * 1664525)) >>> 0 || 1;
+      const ci = bootstrapDiffCI(pctsA, pctsB, { seed: ciSeed });
+      let verdict = 'tied';
+      if (ci?.significant) verdict = ci.meanDelta > 0 ? 'a_better' : 'b_better';
+      pairs.push({
+        modelA: a.model,
+        modelB: b.model,
+        iterA: a.iter,
+        iterB: b.iter,
+        gamesPlayed: gameRecords.length,
+        winsA, winsB, draws,
+        meanPctA: Math.round(meanA * 10) / 10,
+        meanPctB: Math.round(meanB * 10) / 10,
+        meanDelta: ci?.meanDelta ?? (meanA - meanB),
+        ciLow: ci?.ciLow ?? null,
+        ciHigh: ci?.ciHigh ?? null,
+        significant: ci?.significant ?? false,
+        verdict,
+        games: gameRecords,
+      });
+    }
+  }
+
+  return {
+    entries: entries.map(e => ({ model: e.model, iter: e.iter, algoName: e.algoName, bestAvgPct: e.bestAvgPct })),
+    pairs,
+    config: { gridSize, nPlayers, gamesPerPair, game },
+  };
+}
+
+// Collect best-iteration pct samples per model, then run bootstrap over every
+// unordered pair. Produces stable "significantly better" verdicts the dashboard
+// can show without redoing stats client-side.
+function computePairwiseComparisons(modelsObj, runSeed) {
+  const entries = Object.entries(modelsObj)
+    .map(([model, result]) => {
+      const best = result?.summary?.bestIteration;
+      if (!best) return null;
+      const iter = (result.iterations || []).find(it => it.iter === best.iter);
+      const pcts = iter && Array.isArray(iter.games) ? iter.games.map(g => g.pct).filter(Number.isFinite) : [];
+      if (pcts.length === 0) return null;
+      return { model, pcts, meanPct: best.avgPct, iter: best.iter };
+    })
+    .filter(Boolean);
+
+  const pairs = [];
+  for (let i = 0; i < entries.length; i++) {
+    for (let j = i + 1; j < entries.length; j++) {
+      const a = entries[i], b = entries[j];
+      const pairSeed = ((runSeed ^ ((i + 1) * 1315423911)) ^ ((j + 1) * 2654435761)) >>> 0 || 1;
+      const ci = bootstrapDiffCI(a.pcts, b.pcts, { seed: pairSeed });
+      if (!ci) continue;
+      let verdict;
+      if (ci.significant) {
+        verdict = ci.meanDelta > 0 ? 'a_better' : 'b_better';
+      } else {
+        verdict = 'tied';
+      }
+      pairs.push({
+        modelA: a.model,
+        modelB: b.model,
+        iterA: a.iter,
+        iterB: b.iter,
+        meanA: a.meanPct,
+        meanB: b.meanPct,
+        ...ci,
+        verdict,
+      });
+    }
+  }
+  return pairs;
+}
+
 function createInitialState(baselineOpponents) {
   const baselineCode = baselineOpponents[0]?.fn?.toString() || '';
   return {
@@ -245,6 +645,7 @@ function createInitialState(baselineOpponents) {
     leaderboard: [],
     gameHistory: [],
     currentWinner: null,
+    confirmedBest: null,
     currentWinnerCode: baselineCode,
     currentWinnerName: baselineOpponents[0]?.name || 'Baseline',
     plateauStreak: 0,
@@ -287,8 +688,10 @@ async function runSingleIteration({
   opponentAlgos,
   currentState,
   modelIndex,
+  runSeed,
   plateauPatience = DEFAULT_PLATEAU_PATIENCE,
   plateauMinImprovement = DEFAULT_PLATEAU_MIN_IMPROVEMENT,
+  plateauMode = DEFAULT_PLATEAU_MODE,
 }) {
   const state = { ...currentState };
   const {
@@ -362,13 +765,14 @@ async function runSingleIteration({
   const gameRuns = [];
   for (let gameIndex = 0; gameIndex < gamesPerIter; gameIndex++) {
     const algos = [modelFn, ...baselineOpponents.map(entry => entry.fn)];
-    const seed = modelIndex * 1000 + iter * 100 + gameIndex;
+    const seed = deriveGameSeed(runSeed, modelIndex, iter, gameIndex);
     const result = runGame(gridSize, algos, { captureFinalGrid: true, seed });
     (result.perPlayerFlags[0] || []).forEach(f => flags.add(f));
     const pct = Math.round((result.scores[0] / result.totalCells) * 100);
     const winnerIndex = result.scores.indexOf(Math.max(...result.scores));
     gameRuns.push({
       gameNumber: gameIndex + 1,
+      seed,
       pct,
       ticks: result.ticks,
       scores: result.scores,
@@ -406,6 +810,7 @@ async function runSingleIteration({
     games: gameRuns.map(({ finalGrid, ...rest }) => rest),
     representativeGame,
     failureFlags: [...flags],
+    plateauSignal: null,
   };
 
   state.iterations.push(iterationResult);
@@ -418,16 +823,73 @@ async function runSingleIteration({
   state.leaderboard.push({ name: algoName, avgPct, runs: gamesPerIter, iter });
   state.leaderboard.sort((a, b) => b.avgPct - a.avgPct);
 
+  // Plateau reasoning and prompt-context tracking are split into two gates so
+  // that iterations scoring between confirmedBest and currentWinner still get
+  // CI-evaluated. Gating plateau on currentWinner would silently skip those
+  // iterations and let plateauStreak ratchet up to a premature STALE.
   let meaningfulImprovement = false;
+  let plateauSignal = null;
+
+  // Gate 1: plateau evaluation. Compares against the last *confirmed*
+  // improvement (state.confirmedBest). An iteration is eligible for
+  // CI-overlap / fixed-threshold evaluation as soon as its raw avgPct
+  // could beat confirmedBest — even if it is below an un-confirmed
+  // currentWinner that was set by a prior non-CI-significant raw gain.
+  if (!state.confirmedBest || avgPct > state.confirmedBest.avgPct) {
+    const confirmed = state.confirmedBest;
+    const bestGain = confirmed ? avgPct - confirmed.avgPct : avgPct;
+
+    // Prefer CI-overlap reasoning: an iteration is only a meaningful gain
+    // over the last confirmed best if its CI95 lower bound clears the
+    // confirmed best's CI95 upper bound. Falls back to the fixed-threshold
+    // rule when stats are missing or plateauMode is pinned.
+    const bestStats = confirmed?.stats;
+    const canUseCiOverlap = plateauMode === 'ci_overlap'
+      && bestStats
+      && Number.isFinite(stats.ci95Low)
+      && Number.isFinite(bestStats.ci95High);
+
+    if (canUseCiOverlap) {
+      meaningfulImprovement = stats.ci95Low > bestStats.ci95High;
+      plateauSignal = {
+        rule: 'ci_overlap',
+        passed: meaningfulImprovement,
+        currentCi95Low: stats.ci95Low,
+        bestCi95High: bestStats.ci95High,
+      };
+    } else if (confirmed) {
+      meaningfulImprovement = bestGain >= plateauMinImprovement;
+      plateauSignal = {
+        rule: 'fixed_threshold',
+        passed: meaningfulImprovement,
+        gain: bestGain,
+        minImprovement: plateauMinImprovement,
+      };
+    } else {
+      // First successful iteration always counts as improvement.
+      meaningfulImprovement = true;
+      plateauSignal = { rule: 'first_iteration', passed: true };
+    }
+
+    // confirmedBest is the comparison baseline for plateau detection and only
+    // advances when the new iteration clears the statistical bar.
+    if (meaningfulImprovement) {
+      state.confirmedBest = { iter, avgPct, avgTicks, algoName, stats };
+    }
+  }
+
+  // Gate 2: prompt-context / leaderboard tracking. currentWinner feeds the
+  // iterative prompt ("CURRENT WINNER CODE") and updates on every raw-pct
+  // gain so the model always sees the best runnable algorithm it has
+  // produced, regardless of CI-significance.
   if (!state.currentWinner || avgPct > state.currentWinner.avgPct) {
-    const bestGain = state.currentWinner ? avgPct - state.currentWinner.avgPct : avgPct;
-    meaningfulImprovement = bestGain >= plateauMinImprovement;
-    state.currentWinner = { iter, avgPct, avgTicks, algoName };
+    state.currentWinner = { iter, avgPct, avgTicks, algoName, stats };
     state.currentWinnerCode = rawCode;
     state.currentWinnerName = algoName;
     console.log(`  ★ New best so far: ${avgPct}%`);
   }
 
+  iterationResult.plateauSignal = plateauSignal;
   state.plateauStreak = meaningfulImprovement ? 0 : plateauStreak + 1;
   state.lastSuccessfulAvgPct = avgPct;
 
@@ -529,11 +991,13 @@ async function runModelEval({
   nPlayers,
   plateauPatience,
   plateauMinImprovement,
+  plateauMode,
   baselinePool,
   mode = 'self-play',
   modelIndex = 0,
   opponentAlgos = [],
   game = DEFAULT_GAME,
+  runSeed,
 }) {
   const baselineOpponents = baselinePool.slice(0, nPlayers - 1);
   let state = createInitialState(baselineOpponents);
@@ -557,8 +1021,10 @@ async function runModelEval({
       opponentAlgos,
       currentState: state,
       modelIndex,
+      runSeed,
       plateauPatience,
       plateauMinImprovement,
+      plateauMode,
     });
 
     state = updatedState;
@@ -596,10 +1062,20 @@ async function runEval(opts = {}) {
     nPlayers = DEFAULT_N_PLAYERS,
     plateauPatience = DEFAULT_PLATEAU_PATIENCE,
     plateauMinImprovement = DEFAULT_PLATEAU_MIN_IMPROVEMENT,
+    plateauMode = DEFAULT_PLATEAU_MODE,
     outputPath = path.join(__dirname, 'eval-results.json'),
     mode = DEFAULT_MODE,
     game = DEFAULT_GAME,
+    seed,
   } = opts;
+
+  // Top-level run seed: CLI `--seed` pins it for bit-for-bit reproducibility;
+  // otherwise derive a time-based default that we record in the output so any
+  // run can be replayed later by reading protocol.runSeed.
+  const runSeed = Number.isFinite(seed) && seed > 0
+    ? seed >>> 0
+    : (((Date.now() & 0x7fffffff) ^ 0xa5a5a5a5) >>> 0) || 1;
+  console.log(`Run seed: ${runSeed}`);
 
   const gameModule = loadGame(game);
   console.log(`Loaded game: ${gameModule.name}`);
@@ -617,7 +1093,7 @@ async function runEval(opts = {}) {
 
   const benchmarkResults = {
     generatedAt: new Date().toISOString(),
-    schemaVersion: 3,
+    schemaVersion: 4,
     evalVersion: EVAL_VERSION,
     changelog: CHANGELOG,
     protocol: {
@@ -632,6 +1108,7 @@ async function runEval(opts = {}) {
       nPlayers,
       plateauPatience,
       plateauMinImprovement,
+      plateauMode,
       rewardSignals: [
         'avg_territory_pct',
         'leaderboard_position',
@@ -640,6 +1117,7 @@ async function runEval(opts = {}) {
       ],
       baselineOpponents: baselinePool.slice(0, nPlayers - 1).map(entry => entry.name),
       seededRandomness: true,
+      runSeed,
     },
     models: {},
     rankings: [],
@@ -681,8 +1159,10 @@ async function runEval(opts = {}) {
           opponentAlgos: iterOpponentAlgos[modelName],
           currentState: states[modelName],
           modelIndex: modelIdx,
+          runSeed,
           plateauPatience,
           plateauMinImprovement,
+          plateauMode,
           game,
         });
 
@@ -713,13 +1193,39 @@ async function runEval(opts = {}) {
         nPlayers,
         plateauPatience,
         plateauMinImprovement,
+        plateauMode,
         baselinePool,
         mode: 'self-play',
         modelIndex: modelIdx,
         game,
+        runSeed,
       });
     }
   }
+
+  benchmarkResults.pairwiseComparisons = computePairwiseComparisons(benchmarkResults.models, runSeed);
+  benchmarkResults.ratings = computeBradleyTerryRatings(benchmarkResults.models, runSeed);
+
+  if (Object.keys(benchmarkResults.models).length >= 2) {
+    console.log('\n=== Running best-vs-best head-to-head matrix ===');
+    benchmarkResults.headToHead = runHeadToHeadMatrix(benchmarkResults.models, baselinePool, {
+      gridSize,
+      nPlayers,
+      gamesPerPair: gamesPerIter,
+      runSeed,
+      game,
+    });
+    console.log(`Head-to-head: ${benchmarkResults.headToHead.pairs.length} pairs, ${benchmarkResults.headToHead.pairs.reduce((n, p) => n + p.gamesPlayed, 0)} games played`);
+  }
+
+  console.log('\n=== Running held-out reference benchmark ===');
+  benchmarkResults.referenceBenchmark = runHeldOutReferenceBenchmark(benchmarkResults.models, baselinePool, {
+    gridSize,
+    nPlayers,
+    gamesPerModel: gamesPerIter,
+    runSeed,
+  });
+  console.log(`Reference benchmark (${benchmarkResults.referenceBenchmark.referenceName}): ${benchmarkResults.referenceBenchmark.entries.length} models scored.`);
 
   benchmarkResults.rankings = Object.values(benchmarkResults.models)
     .map(result => ({
@@ -795,6 +1301,13 @@ function parseCliArgs(argv) {
         values.plateauMinImprovement = parseFloat(readValue(i, arg));
         i++;
         break;
+      case '--plateau-mode':
+        values.plateauMode = readValue(i, arg);
+        if (values.plateauMode !== 'ci_overlap' && values.plateauMode !== 'fixed_threshold') {
+          throw new Error(`--plateau-mode must be 'ci_overlap' or 'fixed_threshold'`);
+        }
+        i++;
+        break;
       case '--mode':
         values.mode = readValue(i, arg);
         if (values.mode !== 'self-play' && values.mode !== 'adversarial') {
@@ -808,6 +1321,13 @@ function parseCliArgs(argv) {
         break;
       case '--output':
         values.outputPath = path.resolve(readValue(i, arg));
+        i++;
+        break;
+      case '--seed':
+        values.seed = parseInt(readValue(i, arg), 10);
+        if (!Number.isFinite(values.seed) || values.seed <= 0) {
+          throw new Error(`--seed must be a positive integer`);
+        }
         i++;
         break;
       default:
@@ -839,8 +1359,10 @@ Options:
   --grid-size <n>                  Arena grid size (default: ${DEFAULT_GRID_SIZE})
   --players <n>                    Players per game including the model (default: ${DEFAULT_N_PLAYERS})
   --plateau-patience <n>           Early-stop after this many flat rounds (default: ${DEFAULT_PLATEAU_PATIENCE})
-  --plateau-min-improvement <pct>  Minimum best-score gain to reset plateau logic (default: ${DEFAULT_PLATEAU_MIN_IMPROVEMENT})
+  --plateau-min-improvement <pct>  Minimum best-score gain used when plateau-mode=fixed_threshold (default: ${DEFAULT_PLATEAU_MIN_IMPROVEMENT})
+  --plateau-mode <ci_overlap|fixed_threshold>  Plateau rule (default: ${DEFAULT_PLATEAU_MODE}). ci_overlap requires an iteration's CI95 low to clear best-so-far's CI95 high.
   --output <path>                  Output JSON path (default: eval-results.json)
+  --seed <n>                       Top-level run seed for bit-for-bit reproducibility (default: time-based)
   --help                           Show this help
 `.trim());
 }
@@ -872,6 +1394,8 @@ if (require.main === module) {
     outputPath: cliOptions.outputPath,
     mode: cliOptions.mode,
     game: cliOptions.game,
+    seed: cliOptions.seed,
+    plateauMode: cliOptions.plateauMode,
   }).catch(error => {
     console.error(error);
     process.exit(1);
@@ -885,6 +1409,13 @@ module.exports = {
   parseCliArgs,
   extractFunction,
   seededRandom,
+  deriveGameSeed,
+  bootstrapDiffCI,
+  computePairwiseComparisons,
+  runHeadToHeadMatrix,
+  runHeldOutReferenceBenchmark,
+  computeBradleyTerryRatings,
+  fitBradleyTerry,
   loadGame,
   DEFAULT_PROVIDER,
   DEFAULT_MODE,
