@@ -718,6 +718,140 @@
       border-color: var(--border-hover);
     }
 
+    /* ─── Pairwise significance note (under comparison table) ─── */
+    .pairwise-note {
+      margin-top: 14px;
+      padding: 12px 14px;
+      border-left: 3px solid var(--accent-orange);
+      background: var(--bg-elevated);
+      border-radius: var(--radius-sm);
+      font-family: var(--font-serif);
+      font-size: 14px;
+      color: var(--text-secondary);
+      line-height: 1.6;
+    }
+    .pairwise-note .pairwise-line { margin: 2px 0; }
+    .pairwise-note .pairwise-sig {
+      color: var(--text-primary);
+      font-weight: 600;
+    }
+
+    /* ─── Ratings table (Bradley-Terry / Elo) ─── */
+    .ratings-table {
+      overflow-x: auto;
+    }
+    .ratings-table table {
+      width: 100%;
+      border-collapse: collapse;
+      font-family: var(--font-sans);
+      font-size: 13px;
+    }
+    .ratings-table th, .ratings-table td {
+      text-align: left;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .ratings-table th {
+      text-transform: uppercase;
+      font-size: 11px;
+      letter-spacing: 0.05em;
+      color: var(--text-secondary);
+      font-weight: 600;
+    }
+    .ratings-table td.num { font-variant-numeric: tabular-nums; text-align: right; }
+    .ratings-table .kind-model { color: var(--text-primary); font-weight: 600; }
+    .ratings-table .kind-baseline { color: var(--text-secondary); }
+
+    /* ─── Head-to-head matrix (real data) ─── */
+    .head-to-head-matrix {
+      overflow-x: auto;
+    }
+    .h2h-grid {
+      display: grid;
+      gap: 6px;
+      font-family: var(--font-sans);
+      font-size: 12px;
+    }
+    .h2h-cell {
+      padding: 10px 12px;
+      border-radius: var(--radius-sm);
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      text-align: center;
+      min-width: 110px;
+    }
+    .h2h-cell.h2h-head {
+      background: transparent;
+      border: none;
+      color: var(--text-secondary);
+      font-weight: 600;
+      text-transform: uppercase;
+      font-size: 10px;
+      letter-spacing: 0.05em;
+    }
+    .h2h-cell.h2h-diag {
+      background: transparent;
+      border: 1px dashed var(--border-subtle);
+      color: var(--text-secondary);
+    }
+    .h2h-cell .h2h-delta {
+      font-size: 16px;
+      font-variant-numeric: tabular-nums;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+    .h2h-cell.h2h-sig {
+      border-color: var(--accent-orange);
+      box-shadow: 0 0 0 1px var(--accent-orange);
+    }
+    .h2h-cell .h2h-sub {
+      display: block;
+      margin-top: 2px;
+      color: var(--text-secondary);
+      font-size: 11px;
+    }
+
+    /* ─── Held-out reference ─── */
+    .reference-benchmark {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 12px;
+    }
+    .reference-card {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      padding: 14px 16px;
+    }
+    .reference-card .ref-model {
+      font-weight: 600;
+      color: var(--text-primary);
+      font-size: 14px;
+      margin-bottom: 8px;
+    }
+    .reference-card .ref-line {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      font-family: var(--font-sans);
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-bottom: 4px;
+    }
+    .reference-card .ref-line strong {
+      color: var(--text-primary);
+      font-variant-numeric: tabular-nums;
+    }
+    .reference-card .ref-verdict {
+      margin-top: 8px;
+      font-size: 12px;
+      letter-spacing: 0.02em;
+      font-weight: 600;
+    }
+    .reference-card .verdict-model_better { color: var(--accent-green, #3a8350); }
+    .reference-card .verdict-reference_better { color: var(--accent-orange); }
+    .reference-card .verdict-tied { color: var(--text-secondary); }
+
     /* ─── Failure Taxonomy ─── */
     .failure-grid {
       display: grid;
@@ -1021,6 +1155,14 @@
             </table>
           </div>
           <p class="small-note">Ranking is ordered by strongest best result first. Ties fall to the earlier best iteration.</p>
+          <div id="pairwise-note" class="pairwise-note" hidden></div>
+        </section>
+
+        <section class="section panel animate-in animate-in-delay-3" id="s-ratings" data-toc="Ratings">
+          <div class="panel-title">Figure 2 &mdash; Opponent-Aware Ratings</div>
+          <p class="section-copy">Bradley-Terry ratings fit from every model-vs-baseline pairwise outcome across the run, converted to an Elo scale anchored at 1000. Baselines are included so the scoreboard is directly comparable across models and versions.</p>
+          <div id="ratings-table" class="ratings-table"></div>
+          <p class="figure-caption"><strong>Figure 2:</strong> Elo ratings are derived from the same games shown in the comparison table &mdash; no additional games are run to fit them. A small <code>(&plusmn;)</code> gap between two entries is noise; a &gt;100-point gap is a consistent skill difference. Baselines appear alongside models to keep absolute level legible across eval versions.</p>
         </section>
 
         <section class="section panel animate-in animate-in-delay-4" id="s-learning" data-toc="Learning curves">
@@ -1033,13 +1175,17 @@
           <p class="figure-caption"><strong>Figure 1:</strong> Mean territory percentage by eval iteration, one line per model. Shaded bands show &plusmn;1 standard deviation across the N games per iteration. Read this <em>relatively</em> &mdash; the main signals are (a) final height at the latest iteration, (b) slope of improvement across iterations, and (c) the width of the band, which tells you how much of the difference between models is noise.</p>
         </section>
 
-        <!-- TODO: Populate with actual head-to-head matchup data when available -->
         <section class="section panel animate-in animate-in-delay-4" id="s-head-to-head" data-toc="Head-to-head">
-          <div class="panel-title">Figure 2 &mdash; Head-to-Head Matrix</div>
-          <p class="section-copy">Win-rate matrix across models when their best algorithms face each other directly. Requires at least two model runs in the same eval.</p>
-          <div id="head-to-head-matrix" class="placeholder-grid">
-            <div class="placeholder-cell">Matrix will populate when multi-model data is available</div>
-          </div>
+          <div class="panel-title">Figure 4 &mdash; Head-to-Head Matrix</div>
+          <p class="section-copy">Each model's best algorithm played against every other model's best in dedicated seeded games (shared baselines filling the remaining seats). Cells show row-model mean territory &minus; column-model mean territory; a positive value means the row model won that matchup on average.</p>
+          <div id="head-to-head-matrix" class="head-to-head-matrix"></div>
+          <p class="figure-caption"><strong>Figure 4:</strong> Unlike the learning-curve comparison (which mixes each model with baselines), this matrix directly matches best-of-fleet against best-of-fleet. A bold cell indicates a 95% bootstrap CI that excludes zero, meaning the advantage is larger than game-to-game noise.</p>
+        </section>
+
+        <section class="section panel animate-in animate-in-delay-4" id="s-reference" data-toc="Reference">
+          <div class="panel-title">Held-Out Reference</div>
+          <p class="section-copy">Each model's best algorithm is scored against a private reference algorithm that is never exposed in any prompt or written to the output JSON. This provides a cross-version anchor that is independent of the shifting baseline pool.</p>
+          <div id="reference-benchmark" class="reference-benchmark"></div>
         </section>
 
         <section class="section panel animate-in animate-in-delay-4" id="s-failures" data-toc="Failure taxonomy">
