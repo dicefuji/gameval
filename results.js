@@ -697,13 +697,13 @@
   ];
 
   const FAILURE_FLAG_META = {
-    SYNTAX_ERROR:        { label: 'Syntax error',      color: '#E85F5F', blurb: 'extraction failed' },
-    RUNTIME_CRASH:       { label: 'Runtime crash',     color: '#E88C40', blurb: 'algorithm threw during play' },
-    EXPLOIT_DETECTED:    { label: 'Exploit attempt',   color: '#B03A3A', blurb: 'claimed a cell outside the valid mask' },
-    TIMEOUT:             { label: 'Timeout',           color: '#A876E8', blurb: 'exceeded the per-tick budget' },
-    REGRESSION_VS_PRIOR: { label: 'Regression (prior)', color: '#E8C842', blurb: 'scored below its previous iteration' },
-    REGRESSION_VS_BEST:  { label: 'Regression (best)',  color: '#E8A842', blurb: 'scored below its own best' },
-    STALE:               { label: 'Plateau / stale',    color: '#7A7A7A', blurb: 'no meaningful gain for consecutive iterations' },
+    SYNTAX_ERROR:        { label: 'Syntax error',       plural: 'syntax errors',        color: '#E85F5F', blurb: 'extraction failed' },
+    RUNTIME_CRASH:       { label: 'Runtime crash',      plural: 'runtime crashes',      color: '#E88C40', blurb: 'algorithm threw during play' },
+    EXPLOIT_DETECTED:    { label: 'Exploit attempt',    plural: 'exploit attempts',     color: '#B03A3A', blurb: 'claimed a cell outside the valid mask' },
+    TIMEOUT:             { label: 'Timeout',            plural: 'timeouts',             color: '#A876E8', blurb: 'exceeded the per-tick budget' },
+    REGRESSION_VS_PRIOR: { label: 'Regression (prior)', plural: 'regressions (prior)',  color: '#E8C842', blurb: 'scored below its previous iteration' },
+    REGRESSION_VS_BEST:  { label: 'Regression (best)',  plural: 'regressions (best)',   color: '#E8A842', blurb: "scored below its own best" },
+    STALE:               { label: 'Plateau / stale',    plural: 'plateau stalls',       color: '#7A7A7A', blurb: 'no meaningful gain for consecutive iterations' },
   };
 
   function collectFailureCounts(modelResult) {
@@ -723,7 +723,8 @@
       const n = counts[flag] || 0;
       if (!n) continue;
       const meta = FAILURE_FLAG_META[flag];
-      parts.push(`${n} ${meta.label.toLowerCase()}${n === 1 ? '' : 's'} (${meta.blurb})`);
+      const noun = n === 1 ? meta.label.toLowerCase() : meta.plural;
+      parts.push(`${n} ${noun} (${meta.blurb})`);
     }
     if (parts.length === 0) {
       return `${modelName} ran ${totalIterations} iteration${totalIterations === 1 ? '' : 's'} with no annotated failures — stable across the run.`;
