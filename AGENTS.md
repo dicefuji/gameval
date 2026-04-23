@@ -155,7 +155,7 @@
   - Single-model adversarial requests gracefully degrade to self-play with a console warning.
 - Phase 3 (Statistical Rigor Engine) is complete:
   - `seededRandom` LCG produces deterministic but varied starting positions per game.
-  - `createGrid` varies seed radius (0.50-0.60 of base) and angular jitter per player based on the seed.
+  - `createGrid` varies seed radius (0.45-0.75 of base), applies angular jitter up to ±35% of the inter-player angle step, and Fisher-Yates-shuffles which player id occupies which seat. These widened bands were introduced in Phase 8B (B1) so distinct run seeds actually produce visibly different starting configurations after rounding to grid cells.
   - Per-iteration statistics (mean, std, min/max, 95% CI) are computed and stored in `iteration.stats`.
   - Summary `bestIteration` and `latestIteration` both include `stats`.
 - Known runner caveats:
