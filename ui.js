@@ -285,9 +285,11 @@
       if (info) info.textContent = `Loaded model algorithm: ${loadModel} iteration ${targetIter}`;
       if (injectStatus) injectStatus.textContent = `auto-loaded ${loadModel} iter ${targetIter}`;
 
-      // Clear URL params so refresh doesn't re-fetch
+      // Clear URL params so refresh doesn't re-fetch.
+      // Note: the outer IIFE shadows the global `history` with a local game-history array,
+      // so reach for the browser's history explicitly via `window.history`.
       const cleanUrl = window.location.pathname + window.location.hash;
-      history.replaceState(null, '', cleanUrl);
+      window.history.replaceState(null, '', cleanUrl);
     } catch (err) {
       if (panel) panel.style.display = 'block';
       if (info) info.textContent = `Warning: ${err.message}`;
