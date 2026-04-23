@@ -43,6 +43,9 @@
   const speedVal  = document.getElementById('speed-val');
   const injectSlot = document.getElementById('inject-slot');
   const injectStatus = document.getElementById('inject-status');
+  const algoPicker = document.getElementById('algo-picker');
+  const algoPickerStatus = document.getElementById('algo-picker-status');
+  const btnLoadAlgo = document.getElementById('btn-load-algo');
 
   function getSize()     { return parseInt(document.getElementById('grid-size').value); }
   function getNPlayers() { return parseInt(document.getElementById('n-players').value); }
@@ -237,6 +240,119 @@
     init();
   });
 
+  // ─── Algorithm picker (registry-backed) ────────────────────────────────────
+  /**
+   * Load an entry (baseline or model iteration) into seat 0 and reset the game.
+   * Throws on compile failure; caller is responsible for surfacing the message.
+   */
+  function loadEntryIntoSeat0(entry) {
+    const fn = window.ArenaRegistry.compile(entry);
+    const nameHint = entry.kind === 'model'
+      ? `${entry.model} · iter ${entry.iter}`
+      : entry.displayName;
+    ALGO_NAMES[0] = nameHint;
+    customAlgos[0] = fn;
+    stopGame();
+    init();
+    return nameHint;
+  }
+
+  function renderLoadedModelPanel(entry, extra) {
+    const panel = document.getElementById('loaded-model-panel');
+    const info = document.getElementById('loaded-model-info');
+    if (!panel || !info) return;
+    if (!entry) {
+      panel.style.display = 'none';
+      info.textContent = '';
+      return;
+    }
+    let text;
+    if (entry.kind === 'model') {
+      const pct = Number.isFinite(entry.meanPct) ? ` — ${entry.meanPct.toFixed(0)}% territory` : '';
+      text = `Loaded model algorithm: ${entry.model} iteration ${entry.iter}${pct}`;
+    } else {
+      text = `Loaded baseline: ${entry.displayName}`;
+    }
+    info.textContent = extra ? `${text} (${extra})` : text;
+    panel.style.display = 'block';
+  }
+
+  function populateAlgoPicker() {
+    if (!algoPicker) return;
+    const baselines = window.ArenaRegistry.getBaselines();
+    const models = window.ArenaRegistry.getModelEntries();
+    algoPicker.innerHTML = '';
+
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = '— pick an algorithm —';
+    algoPicker.appendChild(placeholder);
+
+    if (baselines.length) {
+      const bg = document.createElement('optgroup');
+      bg.label = 'Baselines (hand-written)';
+      baselines.forEach(entry => {
+        const opt = document.createElement('option');
+        opt.value = entry.id;
+        opt.textContent = entry.displayName;
+        bg.appendChild(opt);
+      });
+      algoPicker.appendChild(bg);
+    }
+
+    if (models.length) {
+      // Group by model so the dropdown stays scannable with many iterations.
+      const byModel = models.reduce((acc, entry) => {
+        (acc[entry.model] = acc[entry.model] || []).push(entry);
+        return acc;
+      }, {});
+      Object.keys(byModel).sort().forEach(modelName => {
+        const mg = document.createElement('optgroup');
+        mg.label = modelName;
+        byModel[modelName].forEach(entry => {
+          const opt = document.createElement('option');
+          opt.value = entry.id;
+          const pct = Number.isFinite(entry.meanPct) ? ` · ${entry.meanPct.toFixed(0)}%` : '';
+          opt.textContent = `iter ${entry.iter}${pct}`;
+          mg.appendChild(opt);
+        });
+        algoPicker.appendChild(mg);
+      });
+    }
+
+    if (!models.length && algoPickerStatus) {
+      const src = window.ArenaRegistry.getSource();
+      algoPickerStatus.textContent = src
+        ? 'no model iterations in eval output (baselines only)'
+        : 'no eval output found — baselines only';
+    } else if (algoPickerStatus) {
+      algoPickerStatus.textContent = `${models.length} model iterations available`;
+    }
+  }
+
+  if (btnLoadAlgo) {
+    btnLoadAlgo.addEventListener('click', () => {
+      if (!algoPicker) return;
+      const id = algoPicker.value;
+      if (!id) {
+        if (algoPickerStatus) algoPickerStatus.textContent = 'pick an algorithm first';
+        return;
+      }
+      const entry = window.ArenaRegistry.findEntry(id);
+      if (!entry) {
+        if (algoPickerStatus) algoPickerStatus.textContent = `entry not found: ${id}`;
+        return;
+      }
+      try {
+        loadEntryIntoSeat0(entry);
+        renderLoadedModelPanel(entry, 'loaded via picker');
+        if (algoPickerStatus) algoPickerStatus.textContent = `loaded ${entry.id}`;
+      } catch (err) {
+        if (algoPickerStatus) algoPickerStatus.textContent = `compile failed: ${err.message}`;
+      }
+    });
+  }
+
   // ─── Auto-load from URL params ─────────────────────────────────────────────
   async function maybeAutoLoadFromParams() {
     const params = new URLSearchParams(window.location.search);
@@ -244,46 +360,16 @@
     const loadIter = params.get('loadIter');
     if (!loadModel || loadIter == null) return;
 
-    const panel = document.getElementById('loaded-model-panel');
-    const info = document.getElementById('loaded-model-info');
-
     try {
-      const response = await fetch('eval-results.json', { cache: 'no-store' });
-      if (!response.ok) throw new Error(`Could not load eval-results.json (${response.status})`);
-      const data = await response.json();
-
-      // Support both normalized and legacy single-model schemas
-      let models = data.models;
-      if (!models && data.model && Array.isArray(data.iterations)) {
-        models = {
-          [data.model]: {
-            iterations: data.iterations,
-          },
-        };
+      const entryId = loadModel + '@' + parseInt(loadIter, 10);
+      const entry = window.ArenaRegistry.findEntry(entryId);
+      if (!entry) {
+        throw new Error(`no registry entry for ${entryId}`);
       }
-
-      const modelData = models?.[loadModel];
-      if (!modelData) throw new Error(`Model "${loadModel}" not found in results`);
-
-      const iterations = Array.isArray(modelData.iterations) ? modelData.iterations : [];
-      const targetIter = parseInt(loadIter, 10);
-      const iteration = iterations.find(iter => iter.iter === targetIter);
-      if (!iteration) throw new Error(`Iteration ${loadIter} not found for model "${loadModel}"`);
-
-      const rawCode = iteration.rawCode;
-      if (!rawCode) throw new Error(`No raw code available for ${loadModel} iteration ${loadIter}`);
-
-      const fn = compileAlgorithm(rawCode);
-      const nameHint = iteration.algoName || fn.name || loadModel;
-      ALGO_NAMES[0] = nameHint;
-      customAlgos[0] = fn;
-
-      stopGame();
-      init();
-
-      if (panel) panel.style.display = 'block';
-      if (info) info.textContent = `Loaded model algorithm: ${loadModel} iteration ${targetIter}`;
-      if (injectStatus) injectStatus.textContent = `auto-loaded ${loadModel} iter ${targetIter}`;
+      loadEntryIntoSeat0(entry);
+      renderLoadedModelPanel(entry, 'auto-loaded from URL');
+      if (injectStatus) injectStatus.textContent = `auto-loaded ${entry.id}`;
+      if (algoPicker) algoPicker.value = entry.id;
 
       // Clear URL params so refresh doesn't re-fetch.
       // Note: the outer IIFE shadows the global `history` with a local game-history array,
@@ -291,15 +377,20 @@
       const cleanUrl = window.location.pathname + window.location.hash;
       window.history.replaceState(null, '', cleanUrl);
     } catch (err) {
+      const panel = document.getElementById('loaded-model-panel');
+      const info = document.getElementById('loaded-model-info');
       if (panel) panel.style.display = 'block';
       if (info) info.textContent = `Warning: ${err.message}`;
       if (injectStatus) injectStatus.textContent = `auto-load failed: ${err.message}`;
-      // Leave arena in default state (init() already ran before this)
     }
   }
 
   // ─── Boot ──────────────────────────────────────────────────────────────────
   init();
-  maybeAutoLoadFromParams();
+  (async function bootRegistry() {
+    await window.ArenaRegistry.load();
+    populateAlgoPicker();
+    await maybeAutoLoadFromParams();
+  })();
 
 })();

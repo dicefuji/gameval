@@ -115,6 +115,17 @@
     <div class="winner-banner" id="winner-banner"></div>
   </div>
 
+  <div class="panel-card" id="algo-picker-panel" style="margin-bottom:1rem;">
+    <div class="panel-title">load algorithm into seat 0</div>
+    <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+      <select id="algo-picker" style="flex:1; min-width:240px; font-size:13px; padding:6px 8px; border-radius:8px; border:0.5px solid #ccc; background:#fff;">
+        <option value="">loading registry…</option>
+      </select>
+      <button class="btn primary" id="btn-load-algo">Load &amp; Reset</button>
+      <span id="algo-picker-status" style="font-size:12px; color:#666;"></span>
+    </div>
+  </div>
+
   <div class="panel-card" id="loaded-model-panel" style="display:none; margin-bottom:1rem;">
     <div style="display:flex; justify-content:space-between; align-items:center; gap:12px;">
       <span id="loaded-model-info" style="font-size:13px; color:#666;"></span>
@@ -163,6 +174,7 @@ function myAlgo(id, grid, size) {
 </div>
 
 <script src="algorithms.js"></script>
+<script src="registry.js"></script>
 <script src="engine.js"></script>
 <script src="ui.js"></script>
 </body>
