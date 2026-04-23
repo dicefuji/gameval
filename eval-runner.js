@@ -38,11 +38,24 @@ const DEFAULT_PLATEAU_MIN_IMPROVEMENT = 1;
 const DEFAULT_MODE = 'self-play';
 const DEFAULT_GAME = 'arena-war';
 
-const EVAL_VERSION = 'arena-war-eval-v0.2.0';
+const EVAL_VERSION = 'arena-war-eval-v0.3.0';
 const CHANGELOG = [
+  'v0.3.0: Reproducible run seed + per-game seeds in output, bootstrap pairwise comparison, CI-overlap plateau, Bradley-Terry ratings, real head-to-head matrix, held-out reference',
   'v0.2.0: Added failure taxonomy, OpenAI provider support, adversarial mode, statistical rigor',
   'v0.1.0: Initial eval harness with Anthropic-only, self-play mode',
 ];
+
+// Mix three small integers into a single deterministic 31-bit seed. Keeps
+// game-level seeds well-separated even when the inputs share digits.
+function deriveGameSeed(runSeed, modelIndex, iter, gameIndex) {
+  const a = (runSeed ^ 0x9e3779b1) >>> 0;
+  const b = ((modelIndex + 1) * 2654435761) >>> 0;
+  const c = ((iter + 1) * 40503) >>> 0;
+  const d = ((gameIndex + 1) * 2246822519) >>> 0;
+  const mixed = (a ^ b ^ c ^ d) >>> 0;
+  // LCG needs a non-zero seed; clamp to the 1..2147483646 range.
+  return (mixed % 2147483646) + 1;
+}
 
 function seededRandom(seed) {
   // Simple LCG: returns a function that generates [0,1) floats deterministically
@@ -75,20 +88,35 @@ function createGrid(size, nPlayers, mask, rng) {
   }
   const cx = Math.floor(size / 2), cy = Math.floor(size / 2);
   const baseRadius = Math.floor(size / 2);
+  // Wider radius band + stronger angle jitter so different seeds actually
+  // produce distinct starting configurations after rounding to grid cells.
   const seedRadius = rng
-    ? baseRadius * (0.50 + rng() * 0.10)
+    ? baseRadius * (0.45 + rng() * 0.30)
     : baseRadius * 0.55;
   const angleStep = (2 * Math.PI) / nPlayers;
-  for (let i = 0; i < nPlayers; i++) {
+  const angleJitterMax = angleStep * 0.35;
+
+  // Permute which player index occupies which seat so the same baseline
+  // algorithm can start from different positions across seeded runs.
+  const seatOrder = Array.from({ length: nPlayers }, (_, i) => i);
+  if (rng) {
+    for (let i = seatOrder.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      [seatOrder[i], seatOrder[j]] = [seatOrder[j], seatOrder[i]];
+    }
+  }
+
+  for (let seat = 0; seat < nPlayers; seat++) {
+    const playerId = seatOrder[seat];
     const angle = rng
-      ? angleStep * i - Math.PI / 2 + (rng() - 0.5) * 0.1
-      : angleStep * i - Math.PI / 2;
+      ? angleStep * seat - Math.PI / 2 + (rng() - 0.5) * 2 * angleJitterMax
+      : angleStep * seat - Math.PI / 2;
     const sr = Math.max(0, Math.min(size-1, Math.round(cx + seedRadius * Math.sin(angle))));
     const sc = Math.max(0, Math.min(size-1, Math.round(cy + seedRadius * Math.cos(angle))));
     for (const [dr, dc] of [[-1,0],[1,0],[0,-1],[0,1],[0,0],[-1,-1],[-1,1],[1,-1],[1,1]]) {
       const nr = sr + dr, nc = sc + dc;
       if (nr >= 0 && nr < size && nc >= 0 && nc < size && mask[nr][nc])
-        grid[nr][nc] = i;
+        grid[nr][nc] = playerId;
     }
   }
   return grid;
@@ -287,6 +315,7 @@ async function runSingleIteration({
   opponentAlgos,
   currentState,
   modelIndex,
+  runSeed,
   plateauPatience = DEFAULT_PLATEAU_PATIENCE,
   plateauMinImprovement = DEFAULT_PLATEAU_MIN_IMPROVEMENT,
 }) {
@@ -362,13 +391,14 @@ async function runSingleIteration({
   const gameRuns = [];
   for (let gameIndex = 0; gameIndex < gamesPerIter; gameIndex++) {
     const algos = [modelFn, ...baselineOpponents.map(entry => entry.fn)];
-    const seed = modelIndex * 1000 + iter * 100 + gameIndex;
+    const seed = deriveGameSeed(runSeed, modelIndex, iter, gameIndex);
     const result = runGame(gridSize, algos, { captureFinalGrid: true, seed });
     (result.perPlayerFlags[0] || []).forEach(f => flags.add(f));
     const pct = Math.round((result.scores[0] / result.totalCells) * 100);
     const winnerIndex = result.scores.indexOf(Math.max(...result.scores));
     gameRuns.push({
       gameNumber: gameIndex + 1,
+      seed,
       pct,
       ticks: result.ticks,
       scores: result.scores,
@@ -534,6 +564,7 @@ async function runModelEval({
   modelIndex = 0,
   opponentAlgos = [],
   game = DEFAULT_GAME,
+  runSeed,
 }) {
   const baselineOpponents = baselinePool.slice(0, nPlayers - 1);
   let state = createInitialState(baselineOpponents);
@@ -557,6 +588,7 @@ async function runModelEval({
       opponentAlgos,
       currentState: state,
       modelIndex,
+      runSeed,
       plateauPatience,
       plateauMinImprovement,
     });
@@ -599,7 +631,16 @@ async function runEval(opts = {}) {
     outputPath = path.join(__dirname, 'eval-results.json'),
     mode = DEFAULT_MODE,
     game = DEFAULT_GAME,
+    seed,
   } = opts;
+
+  // Top-level run seed: CLI `--seed` pins it for bit-for-bit reproducibility;
+  // otherwise derive a time-based default that we record in the output so any
+  // run can be replayed later by reading protocol.runSeed.
+  const runSeed = Number.isFinite(seed) && seed > 0
+    ? seed >>> 0
+    : (((Date.now() & 0x7fffffff) ^ 0xa5a5a5a5) >>> 0) || 1;
+  console.log(`Run seed: ${runSeed}`);
 
   const gameModule = loadGame(game);
   console.log(`Loaded game: ${gameModule.name}`);
@@ -617,7 +658,7 @@ async function runEval(opts = {}) {
 
   const benchmarkResults = {
     generatedAt: new Date().toISOString(),
-    schemaVersion: 3,
+    schemaVersion: 4,
     evalVersion: EVAL_VERSION,
     changelog: CHANGELOG,
     protocol: {
@@ -640,6 +681,7 @@ async function runEval(opts = {}) {
       ],
       baselineOpponents: baselinePool.slice(0, nPlayers - 1).map(entry => entry.name),
       seededRandomness: true,
+      runSeed,
     },
     models: {},
     rankings: [],
@@ -681,6 +723,7 @@ async function runEval(opts = {}) {
           opponentAlgos: iterOpponentAlgos[modelName],
           currentState: states[modelName],
           modelIndex: modelIdx,
+          runSeed,
           plateauPatience,
           plateauMinImprovement,
           game,
@@ -717,6 +760,7 @@ async function runEval(opts = {}) {
         mode: 'self-play',
         modelIndex: modelIdx,
         game,
+        runSeed,
       });
     }
   }
@@ -810,6 +854,13 @@ function parseCliArgs(argv) {
         values.outputPath = path.resolve(readValue(i, arg));
         i++;
         break;
+      case '--seed':
+        values.seed = parseInt(readValue(i, arg), 10);
+        if (!Number.isFinite(values.seed) || values.seed <= 0) {
+          throw new Error(`--seed must be a positive integer`);
+        }
+        i++;
+        break;
       default:
         throw new Error(`Unknown argument: ${arg}`);
     }
@@ -841,6 +892,7 @@ Options:
   --plateau-patience <n>           Early-stop after this many flat rounds (default: ${DEFAULT_PLATEAU_PATIENCE})
   --plateau-min-improvement <pct>  Minimum best-score gain to reset plateau logic (default: ${DEFAULT_PLATEAU_MIN_IMPROVEMENT})
   --output <path>                  Output JSON path (default: eval-results.json)
+  --seed <n>                       Top-level run seed for bit-for-bit reproducibility (default: time-based)
   --help                           Show this help
 `.trim());
 }
@@ -872,6 +924,7 @@ if (require.main === module) {
     outputPath: cliOptions.outputPath,
     mode: cliOptions.mode,
     game: cliOptions.game,
+    seed: cliOptions.seed,
   }).catch(error => {
     console.error(error);
     process.exit(1);
@@ -885,6 +938,7 @@ module.exports = {
   parseCliArgs,
   extractFunction,
   seededRandom,
+  deriveGameSeed,
   loadGame,
   DEFAULT_PROVIDER,
   DEFAULT_MODE,
