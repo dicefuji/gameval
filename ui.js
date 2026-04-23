@@ -174,13 +174,16 @@
 
   function compileAlgorithm(code) {
     if (!code || !code.trim()) throw new Error('no code provided');
+    // Strip markdown fences if the model wrapped its output (mirrors extractFunction in eval-runner.js)
+    const cleaned = code.replace(/```[a-z]*/gi, '').replace(/```/g, '').trim();
+    if (!cleaned) throw new Error('no code provided');
     // eslint-disable-next-line no-new-func
     const fn = new Function(`
       const EMPTY = -1;
-      ${code}
+      ${cleaned}
       // Return the last declared function (model convention)
       const fns = Object.entries(this).filter(([,v]) => typeof v === 'function');
-      return eval((${JSON.stringify(code)}).match(/function\\s+(\\w+)/)?.[1] || 'undefined');
+      return eval((${JSON.stringify(cleaned)}).match(/function\\s+(\\w+)/)?.[1] || 'undefined');
     `).call({});
     if (typeof fn !== 'function') throw new Error('No function found in code');
     return fn;
@@ -282,9 +285,11 @@
       if (info) info.textContent = `Loaded model algorithm: ${loadModel} iteration ${targetIter}`;
       if (injectStatus) injectStatus.textContent = `auto-loaded ${loadModel} iter ${targetIter}`;
 
-      // Clear URL params so refresh doesn't re-fetch
+      // Clear URL params so refresh doesn't re-fetch.
+      // Note: the outer IIFE shadows the global `history` with a local game-history array,
+      // so reach for the browser's history explicitly via `window.history`.
       const cleanUrl = window.location.pathname + window.location.hash;
-      history.replaceState(null, '', cleanUrl);
+      window.history.replaceState(null, '', cleanUrl);
     } catch (err) {
       if (panel) panel.style.display = 'block';
       if (info) info.textContent = `Warning: ${err.message}`;
