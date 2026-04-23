@@ -22,6 +22,7 @@
 const fs = require('fs');
 const path = require('path');
 const { ALGOS, ALGO_NAMES } = require('./algorithms');
+const { REFERENCE: HELD_OUT_REFERENCE, REFERENCE_NAME: HELD_OUT_REFERENCE_NAME } = require('./reference-algorithms');
 const { BASELINE_PROMPT, buildIterativePrompt, buildAdversarialPrompt } = require('./prompts');
 const { callModel, validateProvider } = require('./providers');
 
@@ -426,6 +427,86 @@ function computeBradleyTerryRatings(modelsObj, runSeed) {
     convergedIn: fit.convergedIn,
     converged: fit.converged,
     runSeed,
+  };
+}
+
+// Score each model's best algorithm against the held-out reference in a
+// dedicated set of seeded games. The reference source is never exposed in
+// prompts or the output JSON -- only its name and the per-model outcome are
+// published. This provides a cross-version anchor that's independent of the
+// shifting baseline pool or model fleet.
+function runHeldOutReferenceBenchmark(modelsObj, baselinePool, { gridSize, nPlayers, gamesPerModel, runSeed }) {
+  const entries = Object.entries(modelsObj)
+    .map(([model, result]) => {
+      const best = result?.summary?.bestIteration;
+      if (!best?.rawCode) return null;
+      try {
+        const fn = extractFunction(best.rawCode);
+        return { model, fn, iter: best.iter, algoName: best.algoName, bestAvgPct: best.avgPct };
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean);
+
+  if (entries.length === 0) {
+    return {
+      referenceName: HELD_OUT_REFERENCE_NAME,
+      note: 'Reference source held out of all prompts and outputs.',
+      gamesPerModel,
+      entries: [],
+    };
+  }
+
+  const fillerBaselines = baselinePool.slice(0, Math.max(0, nPlayers - 2)).map(b => b.fn);
+  const results = [];
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i];
+    const games = [];
+    for (let g = 0; g < gamesPerModel; g++) {
+      const seed = ((runSeed ^ ((i + 1) * 2246822519)) ^ ((g + 1) * 40503) ^ 0x13579bdf) >>> 0 || 1;
+      const algos = [entry.fn, HELD_OUT_REFERENCE, ...fillerBaselines];
+      let outcome;
+      try {
+        outcome = runGame(gridSize, algos, { captureFinalGrid: false, seed });
+      } catch {
+        continue;
+      }
+      const total = outcome.totalCells || 1;
+      const pctModel = Math.round((outcome.scores[0] / total) * 100);
+      const pctRef = Math.round((outcome.scores[1] / total) * 100);
+      games.push({ seed, pctModel, pctReference: pctRef, scores: outcome.scores, ticks: outcome.ticks });
+    }
+    if (games.length === 0) continue;
+    const modelPcts = games.map(g => g.pctModel);
+    const refPcts = games.map(g => g.pctReference);
+    const wins = modelPcts.filter((pm, idx) => pm > refPcts[idx]).length;
+    const ciSeed = ((runSeed ^ ((i + 1) * 2971215073)) ^ 0xabcdef01) >>> 0 || 1;
+    const ci = bootstrapDiffCI(modelPcts, refPcts, { seed: ciSeed });
+    let verdict = 'tied';
+    if (ci?.significant) verdict = ci.meanDelta > 0 ? 'model_better' : 'reference_better';
+    results.push({
+      model: entry.model,
+      iter: entry.iter,
+      algoName: entry.algoName,
+      gamesPlayed: games.length,
+      winsVsReference: wins,
+      modelMeanPct: Math.round(modelPcts.reduce((a, b) => a + b, 0) / modelPcts.length * 10) / 10,
+      referenceMeanPct: Math.round(refPcts.reduce((a, b) => a + b, 0) / refPcts.length * 10) / 10,
+      meanDelta: ci?.meanDelta ?? null,
+      ciLow: ci?.ciLow ?? null,
+      ciHigh: ci?.ciHigh ?? null,
+      significant: ci?.significant ?? false,
+      verdict,
+      games,
+    });
+  }
+
+  return {
+    referenceName: HELD_OUT_REFERENCE_NAME,
+    note: 'Reference source is held out of all prompts and eval-results.json.',
+    gamesPerModel,
+    entries: results,
   };
 }
 
@@ -1107,6 +1188,15 @@ async function runEval(opts = {}) {
     console.log(`Head-to-head: ${benchmarkResults.headToHead.pairs.length} pairs, ${benchmarkResults.headToHead.pairs.reduce((n, p) => n + p.gamesPlayed, 0)} games played`);
   }
 
+  console.log('\n=== Running held-out reference benchmark ===');
+  benchmarkResults.referenceBenchmark = runHeldOutReferenceBenchmark(benchmarkResults.models, baselinePool, {
+    gridSize,
+    nPlayers,
+    gamesPerModel: gamesPerIter,
+    runSeed,
+  });
+  console.log(`Reference benchmark (${benchmarkResults.referenceBenchmark.referenceName}): ${benchmarkResults.referenceBenchmark.entries.length} models scored.`);
+
   benchmarkResults.rankings = Object.values(benchmarkResults.models)
     .map(result => ({
       model: result.model,
@@ -1293,6 +1383,7 @@ module.exports = {
   bootstrapDiffCI,
   computePairwiseComparisons,
   runHeadToHeadMatrix,
+  runHeldOutReferenceBenchmark,
   computeBradleyTerryRatings,
   fitBradleyTerry,
   loadGame,
