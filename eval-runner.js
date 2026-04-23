@@ -266,6 +266,84 @@ function computeStats(pcts) {
   return { meanPct: mean, stdPct: std, minPct, maxPct, ci95Low, ci95High, n };
 }
 
+// Bootstrap 95% CI on the difference of means between two pct samples.
+// Uses a deterministic LCG so re-runs of the same eval produce the same CI.
+function bootstrapDiffCI(pctsA, pctsB, { iterations = 4000, alpha = 0.05, seed = 1 } = {}) {
+  if (!pctsA || !pctsB || pctsA.length === 0 || pctsB.length === 0) return null;
+  const rng = seededRandom(seed);
+  const nA = pctsA.length, nB = pctsB.length;
+  const diffs = new Array(iterations);
+  for (let i = 0; i < iterations; i++) {
+    let sa = 0, sb = 0;
+    for (let j = 0; j < nA; j++) sa += pctsA[Math.floor(rng() * nA)];
+    for (let j = 0; j < nB; j++) sb += pctsB[Math.floor(rng() * nB)];
+    diffs[i] = sa / nA - sb / nB;
+  }
+  diffs.sort((x, y) => x - y);
+  const lowIdx = Math.max(0, Math.floor(alpha / 2 * iterations));
+  const highIdx = Math.min(iterations - 1, Math.floor((1 - alpha / 2) * iterations));
+  const meanA = pctsA.reduce((a, b) => a + b, 0) / nA;
+  const meanB = pctsB.reduce((a, b) => a + b, 0) / nB;
+  const meanDelta = meanA - meanB;
+  const ciLow = diffs[lowIdx];
+  const ciHigh = diffs[highIdx];
+  const significant = ciLow > 0 || ciHigh < 0;
+  return {
+    meanDelta,
+    ciLow,
+    ciHigh,
+    significant,
+    method: 'bootstrap_mean_diff',
+    bootstrapIterations: iterations,
+    alpha,
+    nA,
+    nB,
+  };
+}
+
+// Collect best-iteration pct samples per model, then run bootstrap over every
+// unordered pair. Produces stable "significantly better" verdicts the dashboard
+// can show without redoing stats client-side.
+function computePairwiseComparisons(modelsObj, runSeed) {
+  const entries = Object.entries(modelsObj)
+    .map(([model, result]) => {
+      const best = result?.summary?.bestIteration;
+      if (!best) return null;
+      const iter = (result.iterations || []).find(it => it.iter === best.iter);
+      const pcts = iter && Array.isArray(iter.games) ? iter.games.map(g => g.pct).filter(Number.isFinite) : [];
+      if (pcts.length === 0) return null;
+      return { model, pcts, meanPct: best.avgPct, iter: best.iter };
+    })
+    .filter(Boolean);
+
+  const pairs = [];
+  for (let i = 0; i < entries.length; i++) {
+    for (let j = i + 1; j < entries.length; j++) {
+      const a = entries[i], b = entries[j];
+      const pairSeed = ((runSeed ^ ((i + 1) * 1315423911)) ^ ((j + 1) * 2654435761)) >>> 0 || 1;
+      const ci = bootstrapDiffCI(a.pcts, b.pcts, { seed: pairSeed });
+      if (!ci) continue;
+      let verdict;
+      if (ci.significant) {
+        verdict = ci.meanDelta > 0 ? 'a_better' : 'b_better';
+      } else {
+        verdict = 'tied';
+      }
+      pairs.push({
+        modelA: a.model,
+        modelB: b.model,
+        iterA: a.iter,
+        iterB: b.iter,
+        meanA: a.meanPct,
+        meanB: b.meanPct,
+        ...ci,
+        verdict,
+      });
+    }
+  }
+  return pairs;
+}
+
 function createInitialState(baselineOpponents) {
   const baselineCode = baselineOpponents[0]?.fn?.toString() || '';
   return {
@@ -765,6 +843,8 @@ async function runEval(opts = {}) {
     }
   }
 
+  benchmarkResults.pairwiseComparisons = computePairwiseComparisons(benchmarkResults.models, runSeed);
+
   benchmarkResults.rankings = Object.values(benchmarkResults.models)
     .map(result => ({
       model: result.model,
@@ -939,6 +1019,8 @@ module.exports = {
   extractFunction,
   seededRandom,
   deriveGameSeed,
+  bootstrapDiffCI,
+  computePairwiseComparisons,
   loadGame,
   DEFAULT_PROVIDER,
   DEFAULT_MODE,
