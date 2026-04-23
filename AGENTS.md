@@ -94,6 +94,7 @@
 - `results.html` and `results.js`
   - Main user-facing results surface.
   - Intended to show who improved fastest, who finished strongest, why the comparison is trustworthy, and what the selected iteration actually did.
+  - Loads run data through `window.ArenaRegistry` (see `registry.js`) so a fresh clone without a local eval run still renders the bundled `sample-eval-results.json`. Legacy fetch path stays as a fallback when the registry is not loaded (e.g. running `results.html` as a plain file without the `<script src="registry.js">` tag).
   - Currently includes:
     - "How to read this run"
     - methodology bridge
@@ -109,15 +110,25 @@
 - `arena.html`
   - Interactive sandbox and future replay surface.
   - Not the main benchmark surface.
+  - Hosts a new "Load algorithm into seat 0" combobox (Phase 9A) populated from `ArenaRegistry` — every baseline plus every model × iteration in the loaded eval output. The URL-params auto-load path (`?loadModel=...&loadIter=...`) now also routes through the registry.
 - `engine.js`
   - Browser game engine.
   - Still duplicates logic that also exists in `eval-runner.js`.
 - `ui.js`
   - Sandbox UI controller.
   - Uses `game history` terminology deliberately to avoid confusion with eval iterations.
+  - Boot sequence: `init()` → `ArenaRegistry.load()` → `populateAlgoPicker()` → `maybeAutoLoadFromParams()`. Compile path for model-generated code is centralized in `ArenaRegistry.compile(entry)` (fence-strip + `new Function`); the manual-paste button still uses the local `compileAlgorithm` helper.
 - `algorithms.js`
   - Shared built-in baseline strategies.
-  - Exports `{ ALGOS, ALGO_NAMES }` for Node.
+  - Exports `{ ALGOS, ALGO_NAMES }` for Node. In browsers these are top-level `const` bindings: `registry.js` must access them via bare name (not `window.*`).
+- `registry.js` (Phase 9A)
+  - Shared data layer imported by both `results.html` and `arena.html` ahead of each page's main script.
+  - Exposes `window.ArenaRegistry` with `load()`, `getBaselines()`, `getModelEntries()`, `findEntry(id)`, `compile(entry)`, `getResults()`, `getSource()`, `getLoadError()`.
+  - Load order tries `eval-results.json` first, falls back to `sample-eval-results.json`. Emits a `registry:loaded` CustomEvent on `window` when done.
+  - Model entries are keyed `<model>@<iter>`; compiled functions are memoized on the entry so repeated selection is cheap.
+- `sample-eval-results.json` (Phase 9A)
+  - Bundled eval output that ships with the repo so fresh clones render the dashboard and populate the arena picker without first running `npm run eval`.
+  - Tracked via an `!sample-eval-results.json` override in `.gitignore`; `eval-results.json` remains ignored.
 - `package.json`
   - `npm run serve` uses `python3 -m http.server 3000`.
   - `npm run eval:quick` is a short smoke test.
@@ -135,11 +146,11 @@
   - representative snapshot vs full run evidence
 - The header carries a `version-badge` pill showing `evalVersion` with a hover tooltip surfacing the full `changelog`; `evalVersion` also shows in the Shared Protocol strip.
 - The Failure Taxonomy section renders per-model bar rows for each annotated flag and writes a one-sentence natural-language summary per model. It falls back to an "older eval version" message when the loaded `eval-results.json` predates Phase 7.
+- The arena (`arena.html`) now surfaces real model-generated algorithms via the Phase 9A picker, not just hardcoded baselines.
 - The frontend is still limited in a few areas:
-  - no Elo or opponent-aware rating
-  - head-to-head matrix is still a placeholder
-  - no automated arena preloading for replay
-  - plateau detection is shown as a STALE flag but still uses a fixed-threshold rule under the hood
+  - layout refinements (arena's manual-paste panel still sits below the canvas creating visual clutter — slated for Phase 9B)
+  - dashboard hero (learning curve should be the first panel rather than buried mid-page — slated for Phase 9C)
+  - shared design tokens (arena and dashboard still duplicate CSS — slated for Phase 9D)
 
 ## Current State Of The Runner
 - Function extraction was fixed to support model-generated code that contains JavaScript template literals.

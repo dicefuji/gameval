@@ -72,17 +72,19 @@ The benchmark-first workflow is:
 
 ```
 .
-├── AGENTS.md           — persistent repo notes for future agent sessions
-├── algorithms.js       — built-in baseline strategies
-├── arena.html          — interactive sandbox arena
-├── engine.js           — browser game engine
-├── eval-runner.js      — headless multi-model eval harness
+├── AGENTS.md                   — persistent repo notes for future agent sessions
+├── algorithms.js               — built-in baseline strategies
+├── arena.html                  — interactive sandbox arena
+├── engine.js                   — browser game engine
+├── eval-runner.js              — headless multi-model eval harness
 ├── package.json
-├── prompts.js          — prompt templates and iterative feedback wording
-├── results.html        — results dashboard shell
-├── results.js          — results dashboard logic
-├── ui.js               — sandbox UI controller
-├── eval-results.json   — local eval output written by the runner
+├── prompts.js                  — prompt templates and iterative feedback wording
+├── registry.js                 — shared model algorithm registry (browser)
+├── results.html                — results dashboard shell
+├── results.js                  — results dashboard logic
+├── sample-eval-results.json    — bundled sample run so fresh clones render
+├── ui.js                       — sandbox UI controller
+├── eval-results.json           — local eval output written by the runner (gitignored)
 └── README.md
 ```
 
@@ -108,10 +110,16 @@ Defines the first-round prompt and the iterative prompt. Later prompts reuse the
 Read `eval-results.json` and present the benchmark as a comparison product: learning curves, protocol/trust metadata, relative comparison verdicts, per-iteration inspection, representative board snapshots, final model rankings, a per-model Failure Taxonomy panel (bar rows per flag with a one-sentence summary), and a page-header version badge whose hover tooltip shows the full eval changelog.
 
 ### `arena.html`, `engine.js`, and `ui.js`
-Provide the manual arena sandbox. This is where algorithms can be watched and inspected directly, and where best-vs-best replay modes can later live.
+Provide the manual arena sandbox. This is where algorithms can be watched and inspected directly, and where best-vs-best replay modes can later live. The arena's "Load algorithm into seat 0" picker is populated by `registry.js` so every baseline and every model × iteration from the latest eval output can be dropped into the sandbox in one click.
 
 ### `algorithms.js`
 Contains the shared baseline opponents used by the benchmark. These are the fixed strategies that keep the comparison fair across models.
+
+### `registry.js`
+Shared data layer loaded by both `results.html` and `arena.html`. Exposes `window.ArenaRegistry` with `load()`, `getBaselines()`, `getModelEntries()`, `findEntry(id)`, and `compile(entry)`. On boot it tries `eval-results.json` first and falls back to `sample-eval-results.json`, so a fresh clone without a local run still renders a populated dashboard and a populated arena picker. Model entries are compiled lazily via `new Function(...)` with markdown fences stripped, and the compiled function is memoized on the entry.
+
+### `sample-eval-results.json`
+Bundled eval output that ships with the repo. Tracked via an `!` override in `.gitignore`. Used only as a fallback when there is no live `eval-results.json`; a local run overwrites the view on disk (`eval-results.json` takes precedence in the loader).
 
 ---
 
@@ -173,9 +181,12 @@ npm run eval:quick
 
 # Run a multi-model comparison
 npm run eval -- --model claude-sonnet-4-20250514 --model gpt-4o
+
+# Mixed-provider run (per-model provider via @provider)
+npm run eval -- --model claude-sonnet-4-5-20250929@anthropic --model gpt-4o@openai --model gpt-4.1-mini@openai
 ```
 
-The runner writes `eval-results.json` in the repo root. Reload `results.html` after a run to inspect the output.
+The runner writes `eval-results.json` in the repo root. Reload `results.html` after a run to inspect the output. If you haven't run the eval yet, both pages fall back to `sample-eval-results.json` so you still see a working dashboard and a populated arena picker.
 
 When reading the dashboard, treat a "good" result primarily as a relative one: stronger finishing performance and/or faster improvement than peer models under the same protocol. The page should make that clear without requiring a deep read of the methodology document.
 
