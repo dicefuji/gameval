@@ -302,6 +302,133 @@ function bootstrapDiffCI(pctsA, pctsB, { iterations = 4000, alpha = 0.05, seed =
   };
 }
 
+// Fit Bradley-Terry ratings via the Minorization-Maximization update:
+//   r_i_new = W_i / sum_{j != i} (N_ij / (r_i + r_j))
+// where W_i is i's total pairwise wins (draws count as 0.5) and N_ij is
+// the number of pairings between i and j. Converts to an Elo-like scale
+// (400 * log10) anchored so the mean rating equals 1000.
+function fitBradleyTerry(wins, games, { maxIter = 500, tol = 1e-7 } = {}) {
+  const players = Object.keys(wins);
+  if (players.length < 2) return { ratings: {}, convergedIn: 0, converged: true };
+  const W = Object.fromEntries(players.map(p => [p, Object.values(wins[p]).reduce((s, v) => s + v, 0)]));
+  let r = Object.fromEntries(players.map(p => [p, 1]));
+
+  let iter = 0;
+  let converged = false;
+  for (; iter < maxIter; iter++) {
+    const rNew = {};
+    for (const i of players) {
+      let denom = 0;
+      for (const j of players) {
+        if (i === j) continue;
+        const nij = (games[i]?.[j] || 0);
+        if (nij === 0) continue;
+        denom += nij / (r[i] + r[j]);
+      }
+      rNew[i] = denom > 0 ? (W[i] || 0) / denom : r[i];
+      if (!Number.isFinite(rNew[i]) || rNew[i] <= 0) rNew[i] = 1e-6;
+    }
+    // Normalize so the geometric mean of ratings is 1.
+    const logSum = players.reduce((s, p) => s + Math.log(rNew[p]), 0);
+    const logGm = logSum / players.length;
+    const scale = Math.exp(-logGm);
+    for (const p of players) rNew[p] *= scale;
+
+    let maxDelta = 0;
+    for (const p of players) maxDelta = Math.max(maxDelta, Math.abs(rNew[p] - r[p]));
+    r = rNew;
+    if (maxDelta < tol) { converged = true; iter++; break; }
+  }
+
+  // Elo: 400 * log10(r) + 1000 anchor (r-geomean is already 1 → 1000 baseline).
+  const elo = Object.fromEntries(players.map(p => [p, 1000 + 400 * Math.log10(r[p])]));
+  return { ratings: r, elo, convergedIn: iter, converged };
+}
+
+// Extract pairwise win/loss records from every iteration's games.
+// Slot 0 is the model (tracked by model key); slots 1..N-1 are baselines
+// (tracked by their canonical names). Draws count as 0.5 wins to each side.
+function computeBradleyTerryRatings(modelsObj, runSeed) {
+  const wins = {};
+  const games = {};
+
+  const ensure = (name) => {
+    if (!wins[name]) { wins[name] = {}; games[name] = {}; }
+  };
+  const addResult = (winner, loser, wVal = 1) => {
+    ensure(winner); ensure(loser);
+    wins[winner][loser] = (wins[winner][loser] || 0) + wVal;
+    games[winner][loser] = (games[winner][loser] || 0) + 1;
+    games[loser][winner] = (games[loser][winner] || 0) + 1;
+    if (!wins[loser][winner]) wins[loser][winner] = 0;
+  };
+
+  for (const [modelKey, result] of Object.entries(modelsObj)) {
+    const baselineNames = (result.baselineOpponents || []);
+    const iterations = result.iterations || [];
+    for (const iter of iterations) {
+      if (!Array.isArray(iter.games)) continue;
+      const participants = [modelKey, ...baselineNames];
+      for (const g of iter.games) {
+        if (!Array.isArray(g.scores) || g.scores.length !== participants.length) continue;
+        for (let i = 0; i < participants.length; i++) {
+          for (let j = i + 1; j < participants.length; j++) {
+            const pi = participants[i], pj = participants[j];
+            const si = g.scores[i], sj = g.scores[j];
+            if (!Number.isFinite(si) || !Number.isFinite(sj)) continue;
+            if (si > sj) addResult(pi, pj, 1);
+            else if (sj > si) addResult(pj, pi, 1);
+            else {
+              addResult(pi, pj, 0.5);
+              // Counter-side half-win; addResult above already records game.
+              wins[pj][pi] = (wins[pj][pi] || 0) + 0.5;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Laplace smoothing: one phantom tie between every unordered pair of
+  // players. Prevents degenerate zero-win cases from dragging Elo to -inf
+  // and helps the MM iterations converge when sample sizes are tiny.
+  const allPlayers = Object.keys(wins);
+  for (let i = 0; i < allPlayers.length; i++) {
+    for (let j = i + 1; j < allPlayers.length; j++) {
+      const pi = allPlayers[i], pj = allPlayers[j];
+      wins[pi][pj] = (wins[pi][pj] || 0) + 0.5;
+      wins[pj][pi] = (wins[pj][pi] || 0) + 0.5;
+      games[pi][pj] = (games[pi][pj] || 0) + 1;
+      games[pj][pi] = (games[pj][pi] || 0) + 1;
+    }
+  }
+
+  const fit = fitBradleyTerry(wins, games);
+  const modelKeys = new Set(Object.keys(modelsObj));
+  const entries = Object.keys(fit.ratings || {}).map(player => {
+    const totalGames = Object.values(games[player] || {}).reduce((s, v) => s + v, 0);
+    const totalWins = Object.values(wins[player] || {}).reduce((s, v) => s + v, 0);
+    const elo = fit.elo?.[player];
+    return {
+      player,
+      kind: modelKeys.has(player) ? 'model' : 'baseline',
+      btScore: fit.ratings[player],
+      elo: Number.isFinite(elo) ? Math.round(elo * 10) / 10 : null,
+      games: totalGames,
+      wins: totalWins,
+      draws: Object.values(wins[player] || {}).filter(v => v !== Math.floor(v)).length,
+    };
+  }).sort((a, b) => (b.elo ?? -Infinity) - (a.elo ?? -Infinity));
+
+  return {
+    method: 'bradley_terry_mm',
+    entries,
+    convergedIn: fit.convergedIn,
+    converged: fit.converged,
+    runSeed,
+  };
+}
+
 // Run best-vs-best head-to-head games between every pair of models and
 // summarize the matrix for the dashboard. Slots 0/1 are the two model
 // algorithms; remaining slots are filled from the shared baseline pool so
@@ -966,6 +1093,7 @@ async function runEval(opts = {}) {
   }
 
   benchmarkResults.pairwiseComparisons = computePairwiseComparisons(benchmarkResults.models, runSeed);
+  benchmarkResults.ratings = computeBradleyTerryRatings(benchmarkResults.models, runSeed);
 
   if (Object.keys(benchmarkResults.models).length >= 2) {
     console.log('\n=== Running best-vs-best head-to-head matrix ===');
@@ -1165,6 +1293,8 @@ module.exports = {
   bootstrapDiffCI,
   computePairwiseComparisons,
   runHeadToHeadMatrix,
+  computeBradleyTerryRatings,
+  fitBradleyTerry,
   loadGame,
   DEFAULT_PROVIDER,
   DEFAULT_MODE,
