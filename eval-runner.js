@@ -1080,11 +1080,31 @@ async function runEval(opts = {}) {
   const gameModule = loadGame(game);
   console.log(`Loaded game: ${gameModule.name}`);
 
-  validateProvider(provider);
+  // requestedModels is an array of { name, provider } entries. CLI entries
+  // may be strings ("gpt-4o") or "name@provider" ("gpt-4o-mini@openai");
+  // anything without an @ falls back to the run-level --provider default so
+  // existing single-provider invocations keep working unchanged.
+  const rawModels = (Array.isArray(models) && models.length) ? models : [model];
+  const requestedModels = [];
+  const seenNames = new Set();
+  for (const raw of rawModels) {
+    if (!raw) continue;
+    const entry = typeof raw === 'string'
+      ? (() => {
+          const at = raw.indexOf('@');
+          return at === -1
+            ? { name: raw, provider }
+            : { name: raw.slice(0, at), provider: raw.slice(at + 1) };
+        })()
+      : raw;
+    if (!entry.name || seenNames.has(entry.name)) continue;
+    seenNames.add(entry.name);
+    requestedModels.push(entry);
+  }
+  const usedProviders = [...new Set(requestedModels.map(e => e.provider))];
+  for (const p of usedProviders) validateProvider(p);
+
   const baselinePool = loadBaselineAlgos();
-  const requestedModels = [...new Set(
-    ((Array.isArray(models) && models.length) ? models : [model]).filter(Boolean)
-  )];
 
   if (mode === 'adversarial' && requestedModels.length === 1) {
     console.warn('\n[WARNING] Adversarial mode requires at least 2 models. Degrading to self-play.\n');
@@ -1128,27 +1148,27 @@ async function runEval(opts = {}) {
     const states = {};
     const allIterations = {};
 
-    for (const modelName of requestedModels) {
-      states[modelName] = createInitialState(baselinePool.slice(0, nPlayers - 1));
-      allIterations[modelName] = [];
+    for (const entry of requestedModels) {
+      states[entry.name] = createInitialState(baselinePool.slice(0, nPlayers - 1));
+      allIterations[entry.name] = [];
     }
 
     for (let iter = 1; iter <= maxIterations; iter++) {
       // Compute opponent algos for this iteration BEFORE running any model
       const iterOpponentAlgos = {};
-      for (const modelName of requestedModels) {
-        iterOpponentAlgos[modelName] = (iter > 1)
-          ? collectTopOpponentAlgos(states, modelName)
+      for (const entry of requestedModels) {
+        iterOpponentAlgos[entry.name] = (iter > 1)
+          ? collectTopOpponentAlgos(states, entry.name)
           : [];
       }
 
       for (let modelIdx = 0; modelIdx < requestedModels.length; modelIdx++) {
-        const modelName = requestedModels[modelIdx];
-        if (states[modelName].stopped) continue;
+        const entry = requestedModels[modelIdx];
+        if (states[entry.name].stopped) continue;
 
         const { iterationResult, updatedState } = await runSingleIteration({
-          provider,
-          model: modelName,
+          provider: entry.provider,
+          model: entry.name,
           iter,
           maxIterations,
           gamesPerIter,
@@ -1156,8 +1176,8 @@ async function runEval(opts = {}) {
           nPlayers,
           baselineOpponents: baselinePool.slice(0, nPlayers - 1),
           mode: iter === 1 ? 'self-play' : 'adversarial',
-          opponentAlgos: iterOpponentAlgos[modelName],
-          currentState: states[modelName],
+          opponentAlgos: iterOpponentAlgos[entry.name],
+          currentState: states[entry.name],
           modelIndex: modelIdx,
           runSeed,
           plateauPatience,
@@ -1166,27 +1186,28 @@ async function runEval(opts = {}) {
           game,
         });
 
-        states[modelName] = updatedState;
-        allIterations[modelName].push(iterationResult);
+        states[entry.name] = updatedState;
+        allIterations[entry.name].push(iterationResult);
       }
     }
 
-    for (const modelName of requestedModels) {
-      benchmarkResults.models[modelName] = buildModelResult(
-        modelName,
+    for (const entry of requestedModels) {
+      benchmarkResults.models[entry.name] = buildModelResult(
+        entry.name,
         baselinePool.slice(0, nPlayers - 1),
-        allIterations[modelName],
-        states[modelName],
+        allIterations[entry.name],
+        states[entry.name],
         { maxIterations, plateauPatience, plateauMinImprovement }
       );
+      benchmarkResults.models[entry.name].provider = entry.provider;
     }
   } else {
     // Sequential self-play (original behavior)
     for (let modelIdx = 0; modelIdx < requestedModels.length; modelIdx++) {
-      const modelName = requestedModels[modelIdx];
-      benchmarkResults.models[modelName] = await runModelEval({
-        provider,
-        model: modelName,
+      const entry = requestedModels[modelIdx];
+      benchmarkResults.models[entry.name] = await runModelEval({
+        provider: entry.provider,
+        model: entry.name,
         maxIterations,
         gamesPerIter,
         gridSize,
@@ -1200,6 +1221,7 @@ async function runEval(opts = {}) {
         game,
         runSeed,
       });
+      benchmarkResults.models[entry.name].provider = entry.provider;
     }
   }
 
@@ -1350,8 +1372,11 @@ Usage:
   node eval-runner.js --model claude-sonnet-4-20250514 --model gpt-4o
 
 Options:
-  --model <name>                    Repeat to benchmark multiple models
-  --provider <anthropic|openai>    LLM provider (default: ${DEFAULT_PROVIDER})
+  --model <name[@provider]>         Repeat to benchmark multiple models. Append
+                                     @anthropic or @openai to pin the provider
+                                     for a single model (e.g. gpt-4o-mini@openai).
+                                     Without @, falls back to --provider.
+  --provider <anthropic|openai>    Default provider for models without @suffix (default: ${DEFAULT_PROVIDER})
   --mode <self-play|adversarial>   Learning mode: self-play (default) or adversarial (cross-model opponent exposure)
   --game <name>                      Game module to run (default: ${DEFAULT_GAME})
   --iterations <n>                 Target iterations per model (default: ${DEFAULT_MAX_ITERATIONS})
