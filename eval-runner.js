@@ -35,6 +35,7 @@ const DEFAULT_GRID_SIZE = 60;
 const DEFAULT_N_PLAYERS = 4;
 const DEFAULT_PLATEAU_PATIENCE = 2;
 const DEFAULT_PLATEAU_MIN_IMPROVEMENT = 1;
+const DEFAULT_PLATEAU_MODE = 'ci_overlap';
 const DEFAULT_MODE = 'self-play';
 const DEFAULT_GAME = 'arena-war';
 
@@ -396,6 +397,7 @@ async function runSingleIteration({
   runSeed,
   plateauPatience = DEFAULT_PLATEAU_PATIENCE,
   plateauMinImprovement = DEFAULT_PLATEAU_MIN_IMPROVEMENT,
+  plateauMode = DEFAULT_PLATEAU_MODE,
 }) {
   const state = { ...currentState };
   const {
@@ -514,6 +516,7 @@ async function runSingleIteration({
     games: gameRuns.map(({ finalGrid, ...rest }) => rest),
     representativeGame,
     failureFlags: [...flags],
+    plateauSignal: null,
   };
 
   state.iterations.push(iterationResult);
@@ -527,15 +530,49 @@ async function runSingleIteration({
   state.leaderboard.sort((a, b) => b.avgPct - a.avgPct);
 
   let meaningfulImprovement = false;
+  let plateauSignal = null;
   if (!state.currentWinner || avgPct > state.currentWinner.avgPct) {
     const bestGain = state.currentWinner ? avgPct - state.currentWinner.avgPct : avgPct;
-    meaningfulImprovement = bestGain >= plateauMinImprovement;
-    state.currentWinner = { iter, avgPct, avgTicks, algoName };
+
+    // Prefer CI-overlap reasoning: an iteration is only a meaningful gain
+    // over the best-so-far if its CI95 lower bound clears the best's CI95
+    // upper bound. Falls back to the fixed-threshold rule when stats are
+    // missing (e.g. extraction failures) or plateauMode is pinned.
+    const bestStats = state.currentWinner?.stats;
+    const canUseCiOverlap = plateauMode === 'ci_overlap'
+      && bestStats
+      && Number.isFinite(stats.ci95Low)
+      && Number.isFinite(bestStats.ci95High);
+
+    if (canUseCiOverlap) {
+      meaningfulImprovement = stats.ci95Low > bestStats.ci95High;
+      plateauSignal = {
+        rule: 'ci_overlap',
+        passed: meaningfulImprovement,
+        currentCi95Low: stats.ci95Low,
+        bestCi95High: bestStats.ci95High,
+      };
+    } else if (state.currentWinner) {
+      meaningfulImprovement = bestGain >= plateauMinImprovement;
+      plateauSignal = {
+        rule: 'fixed_threshold',
+        passed: meaningfulImprovement,
+        gain: bestGain,
+        minImprovement: plateauMinImprovement,
+      };
+    } else {
+      // First successful iteration always counts as improvement.
+      meaningfulImprovement = true;
+      plateauSignal = { rule: 'first_iteration', passed: true };
+    }
+
+    state.currentWinner = { iter, avgPct, avgTicks, algoName, stats };
     state.currentWinnerCode = rawCode;
     state.currentWinnerName = algoName;
     console.log(`  ★ New best so far: ${avgPct}%`);
   }
 
+  iterationResult.plateauSignal = plateauSignal;
   state.plateauStreak = meaningfulImprovement ? 0 : plateauStreak + 1;
   state.lastSuccessfulAvgPct = avgPct;
 
@@ -637,6 +674,7 @@ async function runModelEval({
   nPlayers,
   plateauPatience,
   plateauMinImprovement,
+  plateauMode,
   baselinePool,
   mode = 'self-play',
   modelIndex = 0,
@@ -669,6 +707,7 @@ async function runModelEval({
       runSeed,
       plateauPatience,
       plateauMinImprovement,
+      plateauMode,
     });
 
     state = updatedState;
@@ -706,6 +745,7 @@ async function runEval(opts = {}) {
     nPlayers = DEFAULT_N_PLAYERS,
     plateauPatience = DEFAULT_PLATEAU_PATIENCE,
     plateauMinImprovement = DEFAULT_PLATEAU_MIN_IMPROVEMENT,
+    plateauMode = DEFAULT_PLATEAU_MODE,
     outputPath = path.join(__dirname, 'eval-results.json'),
     mode = DEFAULT_MODE,
     game = DEFAULT_GAME,
@@ -751,6 +791,7 @@ async function runEval(opts = {}) {
       nPlayers,
       plateauPatience,
       plateauMinImprovement,
+      plateauMode,
       rewardSignals: [
         'avg_territory_pct',
         'leaderboard_position',
@@ -804,6 +845,7 @@ async function runEval(opts = {}) {
           runSeed,
           plateauPatience,
           plateauMinImprovement,
+          plateauMode,
           game,
         });
 
@@ -834,6 +876,7 @@ async function runEval(opts = {}) {
         nPlayers,
         plateauPatience,
         plateauMinImprovement,
+        plateauMode,
         baselinePool,
         mode: 'self-play',
         modelIndex: modelIdx,
@@ -919,6 +962,13 @@ function parseCliArgs(argv) {
         values.plateauMinImprovement = parseFloat(readValue(i, arg));
         i++;
         break;
+      case '--plateau-mode':
+        values.plateauMode = readValue(i, arg);
+        if (values.plateauMode !== 'ci_overlap' && values.plateauMode !== 'fixed_threshold') {
+          throw new Error(`--plateau-mode must be 'ci_overlap' or 'fixed_threshold'`);
+        }
+        i++;
+        break;
       case '--mode':
         values.mode = readValue(i, arg);
         if (values.mode !== 'self-play' && values.mode !== 'adversarial') {
@@ -970,7 +1020,8 @@ Options:
   --grid-size <n>                  Arena grid size (default: ${DEFAULT_GRID_SIZE})
   --players <n>                    Players per game including the model (default: ${DEFAULT_N_PLAYERS})
   --plateau-patience <n>           Early-stop after this many flat rounds (default: ${DEFAULT_PLATEAU_PATIENCE})
-  --plateau-min-improvement <pct>  Minimum best-score gain to reset plateau logic (default: ${DEFAULT_PLATEAU_MIN_IMPROVEMENT})
+  --plateau-min-improvement <pct>  Minimum best-score gain used when plateau-mode=fixed_threshold (default: ${DEFAULT_PLATEAU_MIN_IMPROVEMENT})
+  --plateau-mode <ci_overlap|fixed_threshold>  Plateau rule (default: ${DEFAULT_PLATEAU_MODE}). ci_overlap requires an iteration's CI95 low to clear best-so-far's CI95 high.
   --output <path>                  Output JSON path (default: eval-results.json)
   --seed <n>                       Top-level run seed for bit-for-bit reproducibility (default: time-based)
   --help                           Show this help
@@ -1005,6 +1056,7 @@ if (require.main === module) {
     mode: cliOptions.mode,
     game: cliOptions.game,
     seed: cliOptions.seed,
+    plateauMode: cliOptions.plateauMode,
   }).catch(error => {
     console.error(error);
     process.exit(1);
