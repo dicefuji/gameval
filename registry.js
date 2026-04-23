@@ -47,9 +47,17 @@
   }
 
   function buildBaselineEntries() {
-    if (typeof window.ALGOS !== 'object' || !Array.isArray(window.ALGOS)) return [];
-    const names = Array.isArray(window.ALGO_NAMES) ? window.ALGO_NAMES : [];
-    return window.ALGOS.map(function (fn, i) {
+    // algorithms.js declares ALGOS / ALGO_NAMES with `const`, which live in the
+    // global lexical environment but do NOT become `window` properties. Access
+    // them by bare name (same script global) guarded by typeof to avoid a
+    // ReferenceError when algorithms.js isn't loaded (e.g. a test harness).
+    // eslint-disable-next-line no-undef
+    const hasAlgos = typeof ALGOS !== 'undefined' && Array.isArray(ALGOS);
+    if (!hasAlgos) return [];
+    // eslint-disable-next-line no-undef
+    const names = (typeof ALGO_NAMES !== 'undefined' && Array.isArray(ALGO_NAMES)) ? ALGO_NAMES : [];
+    // eslint-disable-next-line no-undef
+    return ALGOS.map(function (fn, i) {
       const name = names[i] || (fn.name || ('baseline-' + i));
       return {
         id: 'baseline:' + slugify(name),
