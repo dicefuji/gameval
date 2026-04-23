@@ -31,6 +31,7 @@
   const followOn = document.getElementById('follow-on');
   const headToHeadMatrix = document.getElementById('head-to-head-matrix');
   const failureTaxonomy = document.getElementById('failure-taxonomy');
+  const versionBadge = document.getElementById('version-badge');
   const chartTooltip = document.getElementById('chart-tooltip');
   const themeToggle = document.getElementById('theme-toggle');
   const themeIcon = document.getElementById('theme-icon');
@@ -266,6 +267,7 @@
     emptyState.style.display = 'none';
     content.style.display = 'block';
 
+    renderVersionBadge();
     renderSummary();
     renderVerdicts();
     renderProtocol();
@@ -325,10 +327,27 @@
     ].join('');
   }
 
+  function renderVersionBadge() {
+    if (!versionBadge) return;
+    const evalVersion = state.results.evalVersion || state.results.protocol?.evalVersion;
+    if (!evalVersion) {
+      versionBadge.hidden = true;
+      return;
+    }
+    versionBadge.textContent = evalVersion;
+    const changelog = Array.isArray(state.results.changelog) ? state.results.changelog : [];
+    versionBadge.title = changelog.length
+      ? `Changelog:\n${changelog.join('\n')}`
+      : `Eval version: ${evalVersion}`;
+    versionBadge.hidden = false;
+  }
+
   function renderProtocol() {
     const protocol = state.results.protocol || {};
+    const evalVersion = state.results.evalVersion || protocol.evalVersion;
     protocolGrid.innerHTML = [
       metaItem('Run timestamp', formatDate(state.results.generatedAt)),
+      metaItem('Eval version', evalVersion ?? 'n/a'),
       metaItem('Eval schema version', state.results.schemaVersion ?? 'n/a'),
       metaItem('Grid size', protocol.gridSize ?? 'n/a'),
       metaItem('Player count', protocol.nPlayers ?? 'n/a'),
