@@ -102,7 +102,8 @@ Runs the actual benchmark loop. It is responsible for:
 7. dumping the top-level `runSeed` and a per-game `seed` on every `gameRuns[]` entry so any run can be replayed bit-for-bit
 8. computing bootstrap 95% CIs for every model pair (`pairwiseComparisons`), opponent-aware Bradley-Terry / Elo ratings (`ratings`), a real best-vs-best `headToHead` matrix, and a held-out `referenceBenchmark` whose source is never exposed in prompts or output
 9. supporting `--plateau-mode ci_overlap` (default) where an iteration is only a meaningful gain when its CI95 lower bound clears the best-so-far's CI95 upper bound; falls back to `fixed_threshold` when stats are missing
-10. writing a comparison-friendly `eval-results.json` tagged with `evalVersion`, `changelog`, and `schemaVersion` (currently `4`)
+10. writing a comparison-friendly `eval-results.json` tagged with `evalVersion`, `changelog`, and `schemaVersion` (currently `5`)
+11. supporting per-model provider pinning via `--model name@provider` (e.g. `gpt-4o-mini@openai`); models without `@` fall back to the run-level `--provider` default, and the resolved provider is written to `models[<name>].provider` in the output
 
 ### `prompts.js`
 Defines the first-round prompt and the iterative prompt. Later prompts reuse the current leader, leaderboard, and recent game history so that models can improve based on what they learned.
@@ -182,6 +183,9 @@ npm run eval:quick
 
 # Run a multi-model comparison
 npm run eval -- --model claude-sonnet-4-20250514 --model gpt-4o
+
+# Mix providers in one run (Phase 8C)
+npm run eval -- --model claude-sonnet-4-20250514@anthropic --model gpt-4o@openai
 
 # Reproducible run: pin the top-level run seed
 npm run eval -- --seed 424242 --model claude-sonnet-4-20250514 --model gpt-4o

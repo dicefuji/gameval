@@ -76,13 +76,14 @@
   - Owns prompt -> generated algorithm -> extraction -> headless evaluation -> feedback -> plateau stop -> `eval-results.json`.
   - Supports repeated `--model` flags for multi-model comparisons.
   - Supports multiple LLM providers via `--provider anthropic|openai` (default: anthropic).
+  - Supports per-model provider pinning via `--model name@provider` (e.g. `--model gpt-4o-mini@openai`). Entries without `@` fall back to `--provider`. Each model's resolved provider is written to `models[<name>].provider` in the output.
   - Supports two learning modes via `--mode self-play|adversarial` (default: self-play):
     - **Self-play**: Each model only sees its own prior iterations when building prompts.
     - **Adversarial**: After round 1, models also see anonymized top-2 opponent algorithms from OTHER models' runs as source code to beat.
   - Uses seeded randomness (`seededRandom`) to vary starting positions per game while keeping game rules and algorithm behavior deterministic.
   - Computes per-iteration statistics (mean, std, min/max, 95% CI) stored in each iteration result.
   - Emits a per-iteration `failureFlags` array with annotated failure codes (see Failure Taxonomy section below).
-  - Writes top-level `evalVersion`, `changelog`, and `schemaVersion` on every `eval-results.json`; `schemaVersion` is currently `4`.
+  - Writes top-level `evalVersion`, `changelog`, and `schemaVersion` on every `eval-results.json`; `schemaVersion` is currently `5`.
   - Current output schema is comparison-oriented and includes protocol metadata (with `runSeed` and `plateauMode`), per-iteration details with `failureFlags` and `plateauSignal`, per-game `seed`, `pairwiseComparisons`, Bradley-Terry `ratings`, a real `headToHead` matrix, and a held-out `referenceBenchmark`. See the “Current Eval Result Schema” section below for the canonical list.
 - `providers.js`
   - Unified provider interface supporting Anthropic and OpenAI.
@@ -176,13 +177,14 @@
 - The dashboard consumes these flags through `renderFailureTaxonomy()` in `results.js`. Flag labels, colors, and blurbs live in `FAILURE_FLAG_META`; adjust them there when adding new flags.
 
 ## Benchmark Versioning (Phase 7)
-- `EVAL_VERSION` (currently `arena-war-eval-v0.3.0`) and `CHANGELOG` live at the top of `eval-runner.js` and are written into both the top-level result object and `protocol.evalVersion`.
+- `EVAL_VERSION` (currently `arena-war-eval-v0.3.1`) and `CHANGELOG` live at the top of `eval-runner.js` and are written into both the top-level result object and `protocol.evalVersion`.
 - When introducing any eval-behavior change that affects scores, bump `EVAL_VERSION` and prepend a one-line entry to `CHANGELOG`.
 - When changing the shape of `eval-results.json`, bump `schemaVersion`. The frontend reads both `state.results.evalVersion` and `state.results.schemaVersion`.
 
-## Current Eval Result Schema (v0.3.0 / schemaVersion 4)
-Top-level `eval-results.json` fields added or changed in Phase 8B:
-- `schemaVersion: 4`, `evalVersion: 'arena-war-eval-v0.3.0'`.
+## Current Eval Result Schema (v0.3.1 / schemaVersion 5)
+Top-level `eval-results.json` fields added or changed in Phase 8B and 8C:
+- `schemaVersion: 5`, `evalVersion: 'arena-war-eval-v0.3.1'`.
+- `models[<name>].provider` — `'anthropic'` or `'openai'`, resolved from the CLI `--model name@provider` suffix or falling back to the run-level `--provider` default (Phase 8C).
 - `protocol.runSeed` — top-level seed used to derive per-game seeds. Pinned via `--seed <n>` or time-derived otherwise.
 - `protocol.plateauMode` — `'ci_overlap'` (default) or `'fixed_threshold'`.
 - Per-iteration `plateauSignal` — `{ rule, passed, ... }` describing why that iteration did or did not count as improvement.
@@ -212,6 +214,7 @@ Top-level `eval-results.json` fields added or changed in Phase 8B:
   - `npm run eval:quick`
   - `npm run eval -- --model claude-sonnet-4-20250514 --model gpt-4o`
   - `npm run eval -- --provider openai --model gpt-4o`
+  - `npm run eval -- --model claude-sonnet-4-20250514@anthropic --model gpt-4o@openai` (mixed-provider run; Phase 8C)
   - `npm run eval -- --mode adversarial --model claude-sonnet-4-20250514 --model gpt-4o`
   - `npm run eval -- --seed 424242 --model claude-sonnet-4-20250514 --model gpt-4o` (reproducible)
   - `npm run eval -- --plateau-mode fixed_threshold --plateau-min-improvement 2 --model gpt-4o` (legacy plateau rule)

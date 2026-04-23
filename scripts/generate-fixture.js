@@ -22,7 +22,7 @@ const {
 } = require('../eval-runner');
 const { ALGOS, ALGO_NAMES } = require('../algorithms');
 
-const EVAL_VERSION = 'arena-war-eval-v0.3.0';
+const EVAL_VERSION = 'arena-war-eval-v0.3.1';
 const RUN_SEED = 424242;
 const GRID_SIZE = 40;
 const N_PLAYERS = 4;
@@ -38,6 +38,15 @@ const MODEL_FIXTURES = {
   'claude-sonnet-4-20250514': [ALGOS[1], ALGOS[2], ALGOS[4], ALGOS[4], ALGOS[5]],
   'gpt-4o':                   [ALGOS[0], ALGOS[6], ALGOS[2], ALGOS[4], ALGOS[2]],
   'o3-mini':                  [ALGOS[3], ALGOS[1], ALGOS[5], ALGOS[2], ALGOS[4]],
+};
+
+// Provider each fixture model would have been routed through in a real run.
+// Kept in lockstep with MODEL_FIXTURES so the generated fixture matches the
+// v0.3.1 schema (per-model provider field).
+const MODEL_PROVIDERS = {
+  'claude-sonnet-4-20250514': 'anthropic',
+  'gpt-4o':                   'openai',
+  'o3-mini':                  'openai',
 };
 
 function computeStats(pcts) {
@@ -168,6 +177,7 @@ function simulateModel(modelKey, modelIdx) {
 
   return {
     model: modelKey,
+    provider: MODEL_PROVIDERS[modelKey],
     baselineOpponents: BASELINE_NAMES,
     summary: {
       model: modelKey,
@@ -202,9 +212,10 @@ function main() {
 
   const benchmarkResults = {
     generatedAt: new Date().toISOString(),
-    schemaVersion: 4,
+    schemaVersion: 5,
     evalVersion: EVAL_VERSION,
     changelog: [
+      'v0.3.1: Per-model provider pinning via --model name@provider; models[*].provider written to output (schemaVersion 5)',
       'v0.3.0: Reproducible run seed + per-game seeds in output, bootstrap pairwise comparison, CI-overlap plateau, Bradley-Terry ratings, real head-to-head matrix, held-out reference',
       'v0.2.0: Added failure taxonomy, OpenAI provider support, adversarial mode, statistical rigor',
       'v0.1.0: Initial eval harness with Anthropic-only, self-play mode',
