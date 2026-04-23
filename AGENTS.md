@@ -137,7 +137,7 @@
 - The Failure Taxonomy section renders per-model bar rows for each annotated flag and writes a one-sentence natural-language summary per model. It falls back to an "older eval version" message when the loaded `eval-results.json` predates Phase 7.
 - As of Phase 8B the dashboard also renders:
   - A pairwise bootstrap note beneath the comparison table, one line per model pair with delta and 95% CI (`a_better` / `b_better` / `tied`).
-  - A Bradley-Terry / Elo ratings table (Figure 2) covering every model and baseline seen in the run, with a convergence note.
+  - A Bradley-Terry / Elo ratings table (Figure 1) covering every model and baseline seen in the run, with a convergence note.
   - A real head-to-head matrix populated from `headToHead.pairs` (delta, wins–losses–games, CI highlight when the CI excludes zero).
   - A Held-out reference panel with per-model cards (model vs reference delta, CI, wins, verdict).
   - `Run seed` and `Plateau policy` rows in the Shared Protocol strip.

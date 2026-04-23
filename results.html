@@ -1159,27 +1159,27 @@
         </section>
 
         <section class="section panel animate-in animate-in-delay-3" id="s-ratings" data-toc="Ratings">
-          <div class="panel-title">Figure 2 &mdash; Opponent-Aware Ratings</div>
+          <div class="panel-title">Figure 1 &mdash; Opponent-Aware Ratings</div>
           <p class="section-copy">Bradley-Terry ratings fit from every model-vs-baseline pairwise outcome across the run, converted to an Elo scale anchored at 1000. Baselines are included so the scoreboard is directly comparable across models and versions.</p>
           <div id="ratings-table" class="ratings-table"></div>
-          <p class="figure-caption"><strong>Figure 2:</strong> Elo ratings are derived from the same games shown in the comparison table &mdash; no additional games are run to fit them. A small <code>(&plusmn;)</code> gap between two entries is noise; a &gt;100-point gap is a consistent skill difference. Baselines appear alongside models to keep absolute level legible across eval versions.</p>
+          <p class="figure-caption"><strong>Figure 1:</strong> Elo ratings are derived from the same games shown in the comparison table &mdash; no additional games are run to fit them. A small <code>(&plusmn;)</code> gap between two entries is noise; a &gt;100-point gap is a consistent skill difference. Baselines appear alongside models to keep absolute level legible across eval versions.</p>
         </section>
 
         <section class="section panel animate-in animate-in-delay-4" id="s-learning" data-toc="Learning curves">
-          <div class="panel-title">Figure 1 &mdash; Learning Curves</div>
+          <div class="panel-title">Figure 2 &mdash; Learning Curves</div>
           <div class="chart-wrap" id="chart-container" style="position:relative;">
             <svg id="learning-curve" viewBox="0 0 900 320" preserveAspectRatio="xMidYMid meet"></svg>
             <div id="chart-tooltip" class="chart-tooltip"></div>
           </div>
           <div id="chart-legend" class="chart-legend"></div>
-          <p class="figure-caption"><strong>Figure 1:</strong> Mean territory percentage by eval iteration, one line per model. Shaded bands show &plusmn;1 standard deviation across the N games per iteration. Read this <em>relatively</em> &mdash; the main signals are (a) final height at the latest iteration, (b) slope of improvement across iterations, and (c) the width of the band, which tells you how much of the difference between models is noise.</p>
+          <p class="figure-caption"><strong>Figure 2:</strong> Mean territory percentage by eval iteration, one line per model. Shaded bands show &plusmn;1 standard deviation across the N games per iteration. Read this <em>relatively</em> &mdash; the main signals are (a) final height at the latest iteration, (b) slope of improvement across iterations, and (c) the width of the band, which tells you how much of the difference between models is noise.</p>
         </section>
 
         <section class="section panel animate-in animate-in-delay-4" id="s-head-to-head" data-toc="Head-to-head">
-          <div class="panel-title">Figure 4 &mdash; Head-to-Head Matrix</div>
+          <div class="panel-title">Figure 3 &mdash; Head-to-Head Matrix</div>
           <p class="section-copy">Each model's best algorithm played against every other model's best in dedicated seeded games (shared baselines filling the remaining seats). Cells show row-model mean territory &minus; column-model mean territory; a positive value means the row model won that matchup on average.</p>
           <div id="head-to-head-matrix" class="head-to-head-matrix"></div>
-          <p class="figure-caption"><strong>Figure 4:</strong> Unlike the learning-curve comparison (which mixes each model with baselines), this matrix directly matches best-of-fleet against best-of-fleet. A bold cell indicates a 95% bootstrap CI that excludes zero, meaning the advantage is larger than game-to-game noise.</p>
+          <p class="figure-caption"><strong>Figure 3:</strong> Unlike the learning-curve comparison (which mixes each model with baselines), this matrix directly matches best-of-fleet against best-of-fleet. A bold cell indicates a 95% bootstrap CI that excludes zero, meaning the advantage is larger than game-to-game noise.</p>
         </section>
 
         <section class="section panel animate-in animate-in-delay-4" id="s-reference" data-toc="Reference">
@@ -1189,10 +1189,10 @@
         </section>
 
         <section class="section panel animate-in animate-in-delay-4" id="s-failures" data-toc="Failure taxonomy">
-          <div class="panel-title">Figure 3 &mdash; Failure Taxonomy</div>
+          <div class="panel-title">Figure 4 &mdash; Failure Taxonomy</div>
           <p class="section-copy">How often each model's iterations hit an annotated failure mode: extraction errors, runtime crashes, out-of-bounds exploits, timeouts, regressions, and plateau stalls. Use this to distinguish models that scored well from models that scored well <em>and</em> stayed stable.</p>
           <div id="failure-taxonomy" class="failure-grid"></div>
-          <p class="figure-caption"><strong>Figure 3:</strong> Counts are per-iteration occurrences across this run. An iteration may carry multiple flags (for instance, a regression that also stalled). A tall bar is not necessarily worse &mdash; it depends which flag it is. A stack of <em>syntax errors</em> means the model failed to emit runnable code; a stack of <em>regressions</em> means the model kept writing runnable code but lost ground to its own earlier attempts.</p>
+          <p class="figure-caption"><strong>Figure 4:</strong> Counts are per-iteration occurrences across this run. An iteration may carry multiple flags (for instance, a regression that also stalled). A tall bar is not necessarily worse &mdash; it depends which flag it is. A stack of <em>syntax errors</em> means the model failed to emit runnable code; a stack of <em>regressions</em> means the model kept writing runnable code but lost ground to its own earlier attempts.</p>
         </section>
 
         <section class="section panel animate-in animate-in-delay-5" id="s-inspect" data-toc="Inspect a run">
