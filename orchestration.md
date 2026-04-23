@@ -90,12 +90,13 @@
 - Keep backward compatibility: `npm run eval` without `--game` still runs arena-war exactly as before.
 
 ### Phase 7: Failure Taxonomy & Benchmark Versioning
-- **Status**: PENDING
-- **Files**: `eval-runner.js`, `results.js`
+- **Status**: DONE
+- **Files**: `eval-runner.js`, `results.js`, `results.html`, `AGENTS.md`
 - **Goal**: Failure codes per iteration (`SYNTAX_ERROR`, `RUNTIME_CRASH`, `REGRESSION`, etc.); `evalVersion` metadata; changelog semantics
-- **Owner**: TBD
-- **Dependencies**: Phase 3 (statistical data structures in place); Phase 4 (frontend taxonomy panel ready)
-- **Blockers**: Phase 3 and Phase 4 completion
+- **Outcome**:
+  - `eval-runner.js` emits all seven failure codes into `iteration.failureFlags` and writes `evalVersion` + `changelog` + `schemaVersion: 3` into every `eval-results.json`.
+  - `results.html` / `results.js` render a per-model Failure Taxonomy panel (color-coded bars + summary sentence per model) and a version badge in the page header with the changelog as a hover tooltip; `evalVersion` is also shown in the Shared Protocol strip.
+  - `AGENTS.md` now documents the failure codes and versioning policy.
 
 **Detailed Spec:**
 - `eval-runner.js` failure taxonomy:
@@ -124,6 +125,18 @@
   - Color-coded: syntax errors (red), runtime crashes (orange), regressions (yellow), timeouts (purple)
   - Summary sentence: "Model X had 2 runtime crashes and 1 regression; its failure profile suggests..."
 - Version badge in page header: "Arena War Eval v0.2.0" with hover tooltip showing changelog
+
+### Phase 8: Rating, Reference Anchors, & Plateau Rigor
+- **Status**: PENDING (post-Phase-7 backlog)
+- **Files**: `eval-runner.js`, `results.js`, `results.html`, `AGENTS.md`
+- **Goal**: Move beyond raw territory % as the only outcome metric and tighten the statistical interpretation of plateaus.
+- **Scope**:
+  - Elo or opponent-aware rating: accumulate pairwise outcomes across games and iterations; expose rating + uncertainty in the comparison table and learning curve.
+  - Held-out reference algorithms: a frozen set of strong-but-private strategies that are never shared with models, used as a stable cross-version anchor.
+  - CI-overlap plateau detection: declare plateau only when the current iteration's CI95 overlaps the running best's CI95; store the reason in the iteration.
+  - Head-to-head matrix: run each model's best iteration against every other model's best iteration in a round-robin and populate the matrix panel.
+  - Multi-game delegation: fully route `eval-runner.js` through `games/<name>/index.js` and retire the duplicated root copies of `engine.js` / `algorithms.js` / `prompts.js`.
+- **Dependencies**: Phase 7 (failure taxonomy + versioning stable, which is needed before we start bumping eval versions for rating methodology changes).
 
 ## Git Workflow
 - Pull `origin/main` before any agent starts work

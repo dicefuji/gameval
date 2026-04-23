@@ -122,6 +122,8 @@ function runGame(size, algos, opts = {}) {
         if (!Array.isArray(cell) || cell.length < 2) continue;
         const [r, c] = cell;
         if (r < 0 || r >= size || c < 0 || c >= size) continue;
+        // Cells outside the circular play mask are `null`; any attempt to claim
+        // one is an out-of-bounds move the algorithm should never emit.
         if (grid[r][c] === null) {
           perPlayerFlags[i].add('EXPLOIT_DETECTED');
           continue;
@@ -615,7 +617,7 @@ async function runEval(opts = {}) {
 
   const benchmarkResults = {
     generatedAt: new Date().toISOString(),
-    schemaVersion: 2,
+    schemaVersion: 3,
     evalVersion: EVAL_VERSION,
     changelog: CHANGELOG,
     protocol: {

@@ -98,13 +98,14 @@ Runs the actual benchmark loop. It is responsible for:
 3. testing each iteration headlessly
 4. recording reward signals and learning curves
 5. stopping when the run hits the iteration cap or plateaus
-6. writing a comparison-friendly `eval-results.json`
+6. annotating each iteration with a `failureFlags` array covering syntax errors, runtime crashes, timeouts, out-of-bounds exploits, regressions, and plateau stalls
+7. writing a comparison-friendly `eval-results.json` tagged with `evalVersion`, `changelog`, and `schemaVersion` (currently `3`)
 
 ### `prompts.js`
 Defines the first-round prompt and the iterative prompt. Later prompts reuse the current leader, leaderboard, and recent game history so that models can improve based on what they learned.
 
 ### `results.html` and `results.js`
-Read `eval-results.json` and present the benchmark as a comparison product: learning curves, protocol/trust metadata, relative comparison verdicts, per-iteration inspection, representative board snapshots, and final model rankings.
+Read `eval-results.json` and present the benchmark as a comparison product: learning curves, protocol/trust metadata, relative comparison verdicts, per-iteration inspection, representative board snapshots, final model rankings, a per-model Failure Taxonomy panel (bar rows per flag with a one-sentence summary), and a page-header version badge whose hover tooltip shows the full eval changelog.
 
 ### `arena.html`, `engine.js`, and `ui.js`
 Provide the manual arena sandbox. This is where algorithms can be watched and inspected directly, and where best-vs-best replay modes can later live.

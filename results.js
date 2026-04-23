@@ -31,6 +31,7 @@
   const followOn = document.getElementById('follow-on');
   const headToHeadMatrix = document.getElementById('head-to-head-matrix');
   const failureTaxonomy = document.getElementById('failure-taxonomy');
+  const versionBadge = document.getElementById('version-badge');
   const chartTooltip = document.getElementById('chart-tooltip');
   const themeToggle = document.getElementById('theme-toggle');
   const themeIcon = document.getElementById('theme-icon');
@@ -266,6 +267,7 @@
     emptyState.style.display = 'none';
     content.style.display = 'block';
 
+    renderVersionBadge();
     renderSummary();
     renderVerdicts();
     renderProtocol();
@@ -325,10 +327,27 @@
     ].join('');
   }
 
+  function renderVersionBadge() {
+    if (!versionBadge) return;
+    const evalVersion = state.results.evalVersion || state.results.protocol?.evalVersion;
+    if (!evalVersion) {
+      versionBadge.hidden = true;
+      return;
+    }
+    versionBadge.textContent = evalVersion;
+    const changelog = Array.isArray(state.results.changelog) ? state.results.changelog : [];
+    versionBadge.title = changelog.length
+      ? `Changelog:\n${changelog.join('\n')}`
+      : `Eval version: ${evalVersion}`;
+    versionBadge.hidden = false;
+  }
+
   function renderProtocol() {
     const protocol = state.results.protocol || {};
+    const evalVersion = state.results.evalVersion || protocol.evalVersion;
     protocolGrid.innerHTML = [
       metaItem('Run timestamp', formatDate(state.results.generatedAt)),
+      metaItem('Eval version', evalVersion ?? 'n/a'),
       metaItem('Eval schema version', state.results.schemaVersion ?? 'n/a'),
       metaItem('Grid size', protocol.gridSize ?? 'n/a'),
       metaItem('Player count', protocol.nPlayers ?? 'n/a'),
@@ -666,34 +685,112 @@
     `;
   }
 
-  /* ─── Failure Taxonomy placeholder ─── */
+  /* ─── Failure Taxonomy ─── */
+  const FAILURE_FLAG_ORDER = [
+    'SYNTAX_ERROR',
+    'RUNTIME_CRASH',
+    'EXPLOIT_DETECTED',
+    'TIMEOUT',
+    'REGRESSION_VS_PRIOR',
+    'REGRESSION_VS_BEST',
+    'STALE',
+  ];
+
+  const FAILURE_FLAG_META = {
+    SYNTAX_ERROR:        { label: 'Syntax error',       plural: 'syntax errors',        color: '#E85F5F', blurb: 'extraction failed' },
+    RUNTIME_CRASH:       { label: 'Runtime crash',      plural: 'runtime crashes',      color: '#E88C40', blurb: 'algorithm threw during play' },
+    EXPLOIT_DETECTED:    { label: 'Exploit attempt',    plural: 'exploit attempts',     color: '#B03A3A', blurb: 'claimed a cell outside the valid mask' },
+    TIMEOUT:             { label: 'Timeout',            plural: 'timeouts',             color: '#A876E8', blurb: 'exceeded the per-tick budget' },
+    REGRESSION_VS_PRIOR: { label: 'Regression (prior)', plural: 'regressions (prior)',  color: '#E8C842', blurb: 'scored below its previous iteration' },
+    REGRESSION_VS_BEST:  { label: 'Regression (best)',  plural: 'regressions (best)',   color: '#E8A842', blurb: "scored below its own best" },
+    STALE:               { label: 'Plateau / stale',    plural: 'plateau stalls',       color: '#7A7A7A', blurb: 'no meaningful gain for consecutive iterations' },
+  };
+
+  function collectFailureCounts(modelResult) {
+    const counts = Object.create(null);
+    for (const iter of modelResult.iterations) {
+      const flags = Array.isArray(iter.failureFlags) ? iter.failureFlags : [];
+      for (const flag of flags) {
+        counts[flag] = (counts[flag] || 0) + 1;
+      }
+    }
+    return counts;
+  }
+
+  function buildFailureSummarySentence(modelName, counts, totalIterations) {
+    const parts = [];
+    for (const flag of FAILURE_FLAG_ORDER) {
+      const n = counts[flag] || 0;
+      if (!n) continue;
+      const meta = FAILURE_FLAG_META[flag];
+      const noun = n === 1 ? meta.label.toLowerCase() : meta.plural;
+      parts.push(`${n} ${noun} (${meta.blurb})`);
+    }
+    if (parts.length === 0) {
+      return `${modelName} ran ${totalIterations} iteration${totalIterations === 1 ? '' : 's'} with no annotated failures — stable across the run.`;
+    }
+    const joined = parts.length === 1
+      ? parts[0]
+      : parts.slice(0, -1).join(', ') + ', and ' + parts[parts.length - 1];
+    return `${modelName} had ${joined} across ${totalIterations} iteration${totalIterations === 1 ? '' : 's'}.`;
+  }
+
   function renderFailureTaxonomy() {
+    if (!failureTaxonomy) return;
     const entries = allComparisonEntries();
 
-    // TODO: Replace with actual failure taxonomy when data is available in eval-results.json
-    const hasErrors = entries.some(e => e.modelResult.iterations.some(i => i.error));
-    const hasPlateau = entries.some(e => e.stopReason && e.stopReason.includes('plateau'));
-
-    if (!hasErrors && !hasPlateau && entries.length === 1) {
-      failureTaxonomy.innerHTML = `<div class="placeholder-cell">Single model run with no failures recorded</div>`;
+    if (entries.length === 0) {
+      failureTaxonomy.innerHTML = `<div class="failure-empty">No model runs in this result set.</div>`;
       return;
     }
 
-    const cells = entries.map(entry => {
-      const errorCount = entry.modelResult.iterations.filter(i => i.error).length;
-      const isPlateau = entry.stopReason && entry.stopReason.includes('plateau');
+    // Detect whether the runner that produced this file emitted failureFlags at all.
+    const anyAnnotated = entries.some(entry =>
+      entry.modelResult.iterations.some(iter => Array.isArray(iter.failureFlags))
+    );
+    if (!anyAnnotated) {
+      failureTaxonomy.innerHTML = `<div class="failure-empty">This run was produced by an older eval version without failure annotations. Re-run with the current eval-runner to populate this panel.</div>`;
+      return;
+    }
+
+    // Find the max count across all (model, flag) pairs so bar widths are comparable.
+    let globalMax = 0;
+    const perModel = entries.map(entry => {
+      const counts = collectFailureCounts(entry.modelResult);
+      for (const flag of FAILURE_FLAG_ORDER) {
+        if ((counts[flag] || 0) > globalMax) globalMax = counts[flag];
+      }
+      return { entry, counts };
+    });
+    if (globalMax === 0) globalMax = 1; // avoid div-by-zero when no failures
+
+    const cards = perModel.map(({ entry, counts }) => {
+      const totalIterations = entry.modelResult.iterations.length;
+      const rows = FAILURE_FLAG_ORDER.map(flag => {
+        const n = counts[flag] || 0;
+        const meta = FAILURE_FLAG_META[flag];
+        const widthPct = (n / globalMax) * 100;
+        return `
+          <div class="failure-bar-row">
+            <span title="${escapeHtml(meta.blurb)}">${escapeHtml(meta.label)}</span>
+            <div class="failure-bar-track">
+              <div class="failure-bar-fill" style="width:${widthPct}%; background:${meta.color};"></div>
+            </div>
+            <span class="failure-bar-count">${n}</span>
+          </div>
+        `;
+      }).join('');
+      const summary = buildFailureSummarySentence(entry.model, counts, totalIterations);
       return `
-        <div class="placeholder-cell">
-          <strong style="display:block; margin-bottom:4px; color:var(--text-primary);">${escapeHtml(entry.model)}</strong>
-          <span style="font-size:12px; color:var(--text-secondary);">
-            ${errorCount > 0 ? `${errorCount} extraction error(s)` : 'No extraction errors'}<br>
-            ${isPlateau ? 'Stopped at plateau' : entry.stopReason === 'max_iterations_reached' ? 'Ran to completion' : formatStopReason(entry.stopReason)}
-          </span>
+        <div class="failure-card">
+          <div class="failure-card-title">${escapeHtml(entry.model)}</div>
+          ${rows}
+          <div class="failure-summary">${escapeHtml(summary)}</div>
         </div>
       `;
     }).join('');
 
-    failureTaxonomy.innerHTML = cells;
+    failureTaxonomy.innerHTML = cards;
   }
 
   /* ─── Simple DOM-based syntax highlighting ─── */

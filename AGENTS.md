@@ -81,7 +81,9 @@
     - **Adversarial**: After round 1, models also see anonymized top-2 opponent algorithms from OTHER models' runs as source code to beat.
   - Uses seeded randomness (`seededRandom`) to vary starting positions per game while keeping game rules and algorithm behavior deterministic.
   - Computes per-iteration statistics (mean, std, min/max, 95% CI) stored in each iteration result.
-  - Current output schema is comparison-oriented and includes protocol metadata, model summaries, per-iteration details, prompt feedback, and representative board snapshots.
+  - Emits a per-iteration `failureFlags` array with annotated failure codes (see Failure Taxonomy section below).
+  - Writes top-level `evalVersion`, `changelog`, and `schemaVersion` on every `eval-results.json`; `schemaVersion` is currently `3`.
+  - Current output schema is comparison-oriented and includes protocol metadata, model summaries, per-iteration details, prompt feedback, representative board snapshots, and failure annotations.
 - `providers.js`
   - Unified provider interface supporting Anthropic and OpenAI.
   - Exports `callModel(provider, model, prompt, maxTokens)` which returns `{ text, usage, latency }`.
@@ -131,13 +133,13 @@
   - same-model feedback leaderboard/history inside a run
   - eval iteration vs sandbox game history
   - representative snapshot vs full run evidence
-- The current frontend is still limited by the data it receives:
-  - no confidence intervals
-  - no variance bands
-  - no failure taxonomy section
-  - no Elo
-  - no head-to-head matrix
+- The header carries a `version-badge` pill showing `evalVersion` with a hover tooltip surfacing the full `changelog`; `evalVersion` also shows in the Shared Protocol strip.
+- The Failure Taxonomy section renders per-model bar rows for each annotated flag and writes a one-sentence natural-language summary per model. It falls back to an "older eval version" message when the loaded `eval-results.json` predates Phase 7.
+- The frontend is still limited in a few areas:
+  - no Elo or opponent-aware rating
+  - head-to-head matrix is still a placeholder
   - no automated arena preloading for replay
+  - plateau detection is shown as a STALE flag but still uses a fixed-threshold rule under the hood
 
 ## Current State Of The Runner
 - Function extraction was fixed to support model-generated code that contains JavaScript template literals.
@@ -156,17 +158,43 @@
   - plateau logic exists, but the methodology wants stronger statistical interpretation around plateau and significance
   - full game logic is duplicated between browser and Node paths
 
+## Failure Taxonomy (Phase 7)
+- Every iteration result in `eval-results.json` carries a `failureFlags: string[]` array. Possible codes:
+  - `SYNTAX_ERROR` — function extraction from model output failed; no games were run.
+  - `RUNTIME_CRASH` — the algorithm threw during one or more game ticks.
+  - `TIMEOUT` — a single tick call took longer than 50ms.
+  - `EXPLOIT_DETECTED` — the algorithm tried to claim a cell outside the circular play mask.
+  - `REGRESSION_VS_PRIOR` — iteration scored below its own previous successful iteration.
+  - `REGRESSION_VS_BEST` — iteration scored below this model's best-so-far.
+  - `STALE` — plateau streak hit the configured patience threshold.
+- `RUNTIME_CRASH`, `TIMEOUT`, and `EXPLOIT_DETECTED` are detected inside `runGame()` via a `perPlayerFlags` set that is aggregated across all games in the iteration.
+- The runner logs `⚠ Failure flags: ...` to stdout whenever a non-empty set is emitted.
+- The dashboard consumes these flags through `renderFailureTaxonomy()` in `results.js`. Flag labels, colors, and blurbs live in `FAILURE_FLAG_META`; adjust them there when adding new flags.
+
+## Benchmark Versioning (Phase 7)
+- `EVAL_VERSION` (currently `arena-war-eval-v0.2.0`) and `CHANGELOG` live at the top of `eval-runner.js` and are written into both the top-level result object and `protocol.evalVersion`.
+- When introducing any eval-behavior change that affects scores, bump `EVAL_VERSION` and prepend a one-line entry to `CHANGELOG`.
+- When changing the shape of `eval-results.json`, bump `schemaVersion`. The frontend reads both `state.results.evalVersion` and `state.results.schemaVersion`.
+
 ## Known Gaps And Next Priorities
 - Phase 3 addressed: controlled variance (seeded randomness), consistency/spread reporting, and `N >= 5` default are all implemented.
-- The most important rigor gaps still open:
-  1. Add failure taxonomy fields to `eval-results.json`.
-  2. Add eval versioning / changelog metadata.
-  3. Consider held-out reference algorithms and Elo-style rating.
-  4. Stronger statistical interpretation around plateau detection (e.g., compare against CI overlap rather than fixed thresholds).
-- The most important UX gaps to address next:
-  1. Show consistency or uncertainty in the dashboard (CI bands, variance indicators).
-  2. Surface limitations more explicitly.
+- Phase 7 addressed: failure taxonomy fields, eval versioning, and changelog metadata are all implemented in both runner and dashboard.
+- The most important rigor gaps still open (tracked as Phase 8 below):
+  1. Consider held-out reference algorithms and Elo-style rating.
+  2. Stronger statistical interpretation around plateau detection (compare CI overlap rather than fixed thresholds).
+  3. Full delegation of `eval-runner.js` to `games/<name>/index.js` so the root `engine.js` / `algorithms.js` / `prompts.js` copies can be retired.
+- The most important UX gaps still open:
+  1. Populate the head-to-head matrix panel with real data.
+  2. Further surface consistency/uncertainty alongside the CI bands on the learning curve.
   3. Provide a more seamless path from "best-vs-best candidate" to actual arena replay.
+
+## Phase 8 Backlog (post-Phase-7)
+- **Elo / opponent-aware rating**: replace or supplement `avgPct` with a rating that accounts for which opponents each algorithm actually beat. Needed before any cross-run leaderboard claim.
+- **Held-out reference algorithms**: a small frozen set of strong-but-fixed algorithms that are never shared with models, used to produce a stable anchor across eval versions.
+- **CI-overlap plateau detection**: declare a plateau only when the current iteration's CI95 overlaps the running best's CI95, instead of the current fixed-gain rule. Store the plateau rationale in the iteration result.
+- **Head-to-head matrix**: run each model's best iteration against every other model's best iteration in a round-robin and populate the matrix panel.
+- **Multi-game delegation**: make `eval-runner.js` fully load the engine/algorithms/prompts from `games/<name>/index.js` instead of the root files, and remove the duplicated root copies.
+- **Schema changelog discipline**: any change to `eval-results.json` shape must bump `schemaVersion` and prepend an entry to `CHANGELOG`.
 
 ## Setup And Validation
 - Install dependencies with `npm install`.
