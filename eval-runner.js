@@ -302,6 +302,85 @@ function bootstrapDiffCI(pctsA, pctsB, { iterations = 4000, alpha = 0.05, seed =
   };
 }
 
+// Run best-vs-best head-to-head games between every pair of models and
+// summarize the matrix for the dashboard. Slots 0/1 are the two model
+// algorithms; remaining slots are filled from the shared baseline pool so
+// the opponent mix is identical across pairs.
+function runHeadToHeadMatrix(modelsObj, baselinePool, { gridSize, nPlayers, gamesPerPair, runSeed, game }) {
+  const entries = Object.entries(modelsObj)
+    .map(([model, result]) => {
+      const best = result?.summary?.bestIteration;
+      if (!best?.rawCode) return null;
+      try {
+        const fn = extractFunction(best.rawCode);
+        return { model, fn, iter: best.iter, bestAvgPct: best.avgPct, algoName: best.algoName };
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean);
+
+  if (entries.length < 2) return { entries: entries.map(e => ({ model: e.model, iter: e.iter })), pairs: [] };
+
+  const baselineFns = baselinePool.slice(0, Math.max(0, nPlayers - 2)).map(b => b.fn);
+  const pairs = [];
+  for (let i = 0; i < entries.length; i++) {
+    for (let j = i + 1; j < entries.length; j++) {
+      const a = entries[i], b = entries[j];
+      const gameRecords = [];
+      for (let g = 0; g < gamesPerPair; g++) {
+        // Deterministic seed per (pair, game).
+        const pairSeed = ((runSeed ^ ((i + 1) * 374761393)) ^ ((j + 1) * 668265263) ^ ((g + 1) * 40503)) >>> 0 || 1;
+        const algos = [a.fn, b.fn, ...baselineFns];
+        let result;
+        try {
+          result = runGame(gridSize, algos, { captureFinalGrid: false, seed: pairSeed });
+        } catch {
+          continue;
+        }
+        const total = result.totalCells || 1;
+        const pctA = Math.round((result.scores[0] / total) * 100);
+        const pctB = Math.round((result.scores[1] / total) * 100);
+        gameRecords.push({ seed: pairSeed, pctA, pctB, scores: result.scores, ticks: result.ticks });
+      }
+      if (gameRecords.length === 0) continue;
+      const pctsA = gameRecords.map(r => r.pctA);
+      const pctsB = gameRecords.map(r => r.pctB);
+      const meanA = pctsA.reduce((x, y) => x + y, 0) / pctsA.length;
+      const meanB = pctsB.reduce((x, y) => x + y, 0) / pctsB.length;
+      const winsA = pctsA.filter((pa, idx) => pa > pctsB[idx]).length;
+      const winsB = pctsB.filter((pb, idx) => pb > pctsA[idx]).length;
+      const draws = gameRecords.length - winsA - winsB;
+      const ciSeed = ((runSeed ^ ((i + 1) * 1013904223)) ^ ((j + 1) * 1664525)) >>> 0 || 1;
+      const ci = bootstrapDiffCI(pctsA, pctsB, { seed: ciSeed });
+      let verdict = 'tied';
+      if (ci?.significant) verdict = ci.meanDelta > 0 ? 'a_better' : 'b_better';
+      pairs.push({
+        modelA: a.model,
+        modelB: b.model,
+        iterA: a.iter,
+        iterB: b.iter,
+        gamesPlayed: gameRecords.length,
+        winsA, winsB, draws,
+        meanPctA: Math.round(meanA * 10) / 10,
+        meanPctB: Math.round(meanB * 10) / 10,
+        meanDelta: ci?.meanDelta ?? (meanA - meanB),
+        ciLow: ci?.ciLow ?? null,
+        ciHigh: ci?.ciHigh ?? null,
+        significant: ci?.significant ?? false,
+        verdict,
+        games: gameRecords,
+      });
+    }
+  }
+
+  return {
+    entries: entries.map(e => ({ model: e.model, iter: e.iter, algoName: e.algoName, bestAvgPct: e.bestAvgPct })),
+    pairs,
+    config: { gridSize, nPlayers, gamesPerPair, game },
+  };
+}
+
 // Collect best-iteration pct samples per model, then run bootstrap over every
 // unordered pair. Produces stable "significantly better" verdicts the dashboard
 // can show without redoing stats client-side.
@@ -888,6 +967,18 @@ async function runEval(opts = {}) {
 
   benchmarkResults.pairwiseComparisons = computePairwiseComparisons(benchmarkResults.models, runSeed);
 
+  if (Object.keys(benchmarkResults.models).length >= 2) {
+    console.log('\n=== Running best-vs-best head-to-head matrix ===');
+    benchmarkResults.headToHead = runHeadToHeadMatrix(benchmarkResults.models, baselinePool, {
+      gridSize,
+      nPlayers,
+      gamesPerPair: gamesPerIter,
+      runSeed,
+      game,
+    });
+    console.log(`Head-to-head: ${benchmarkResults.headToHead.pairs.length} pairs, ${benchmarkResults.headToHead.pairs.reduce((n, p) => n + p.gamesPlayed, 0)} games played`);
+  }
+
   benchmarkResults.rankings = Object.values(benchmarkResults.models)
     .map(result => ({
       model: result.model,
@@ -1073,6 +1164,7 @@ module.exports = {
   deriveGameSeed,
   bootstrapDiffCI,
   computePairwiseComparisons,
+  runHeadToHeadMatrix,
   loadGame,
   DEFAULT_PROVIDER,
   DEFAULT_MODE,
