@@ -82,8 +82,8 @@
   - Uses seeded randomness (`seededRandom`) to vary starting positions per game while keeping game rules and algorithm behavior deterministic.
   - Computes per-iteration statistics (mean, std, min/max, 95% CI) stored in each iteration result.
   - Emits a per-iteration `failureFlags` array with annotated failure codes (see Failure Taxonomy section below).
-  - Writes top-level `evalVersion`, `changelog`, and `schemaVersion` on every `eval-results.json`; `schemaVersion` is currently `3`.
-  - Current output schema is comparison-oriented and includes protocol metadata, model summaries, per-iteration details, prompt feedback, representative board snapshots, and failure annotations.
+  - Writes top-level `evalVersion`, `changelog`, and `schemaVersion` on every `eval-results.json`; `schemaVersion` is currently `4`.
+  - Current output schema is comparison-oriented and includes protocol metadata (with `runSeed` and `plateauMode`), per-iteration details with `failureFlags` and `plateauSignal`, per-game `seed`, `pairwiseComparisons`, Bradley-Terry `ratings`, a real `headToHead` matrix, and a held-out `referenceBenchmark`. See the “Current Eval Result Schema” section below for the canonical list.
 - `providers.js`
   - Unified provider interface supporting Anthropic and OpenAI.
   - Exports `callModel(provider, model, prompt, maxTokens)` which returns `{ text, usage, latency }`.
@@ -135,11 +135,15 @@
   - representative snapshot vs full run evidence
 - The header carries a `version-badge` pill showing `evalVersion` with a hover tooltip surfacing the full `changelog`; `evalVersion` also shows in the Shared Protocol strip.
 - The Failure Taxonomy section renders per-model bar rows for each annotated flag and writes a one-sentence natural-language summary per model. It falls back to an "older eval version" message when the loaded `eval-results.json` predates Phase 7.
+- As of Phase 8B the dashboard also renders:
+  - A pairwise bootstrap note beneath the comparison table, one line per model pair with delta and 95% CI (`a_better` / `b_better` / `tied`).
+  - A Bradley-Terry / Elo ratings table (Figure 2) covering every model and baseline seen in the run, with a convergence note.
+  - A real head-to-head matrix populated from `headToHead.pairs` (delta, wins–losses–games, CI highlight when the CI excludes zero).
+  - A Held-out reference panel with per-model cards (model vs reference delta, CI, wins, verdict).
+  - `Run seed` and `Plateau policy` rows in the Shared Protocol strip.
 - The frontend is still limited in a few areas:
-  - no Elo or opponent-aware rating
-  - head-to-head matrix is still a placeholder
   - no automated arena preloading for replay
-  - plateau detection is shown as a STALE flag but still uses a fixed-threshold rule under the hood
+  - no hosted/public results page for a frozen reference run
 
 ## Current State Of The Runner
 - Function extraction was fixed to support model-generated code that contains JavaScript template literals.

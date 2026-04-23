@@ -352,9 +352,12 @@ function fitBradleyTerry(wins, games, { maxIter = 500, tol = 1e-7 } = {}) {
 function computeBradleyTerryRatings(modelsObj, runSeed) {
   const wins = {};
   const games = {};
+  // draws[a][b] counts the number of actual draw games between a and b.
+  // Tracked separately so Laplace smoothing below can't corrupt it.
+  const draws = {};
 
   const ensure = (name) => {
-    if (!wins[name]) { wins[name] = {}; games[name] = {}; }
+    if (!wins[name]) { wins[name] = {}; games[name] = {}; draws[name] = {}; }
   };
   const addResult = (winner, loser, wVal = 1) => {
     ensure(winner); ensure(loser);
@@ -383,6 +386,9 @@ function computeBradleyTerryRatings(modelsObj, runSeed) {
               addResult(pi, pj, 0.5);
               // Counter-side half-win; addResult above already records game.
               wins[pj][pi] = (wins[pj][pi] || 0) + 0.5;
+              ensure(pi); ensure(pj);
+              draws[pi][pj] = (draws[pi][pj] || 0) + 1;
+              draws[pj][pi] = (draws[pj][pi] || 0) + 1;
             }
           }
         }
@@ -417,7 +423,7 @@ function computeBradleyTerryRatings(modelsObj, runSeed) {
       elo: Number.isFinite(elo) ? Math.round(elo * 10) / 10 : null,
       games: totalGames,
       wins: totalWins,
-      draws: Object.values(wins[player] || {}).filter(v => v !== Math.floor(v)).length,
+      draws: Object.values(draws[player] || {}).reduce((s, v) => s + v, 0),
     };
   }).sort((a, b) => (b.elo ?? -Infinity) - (a.elo ?? -Infinity));
 
@@ -639,6 +645,7 @@ function createInitialState(baselineOpponents) {
     leaderboard: [],
     gameHistory: [],
     currentWinner: null,
+    confirmedBest: null,
     currentWinnerCode: baselineCode,
     currentWinnerName: baselineOpponents[0]?.name || 'Baseline',
     plateauStreak: 0,
@@ -819,13 +826,18 @@ async function runSingleIteration({
   let meaningfulImprovement = false;
   let plateauSignal = null;
   if (!state.currentWinner || avgPct > state.currentWinner.avgPct) {
-    const bestGain = state.currentWinner ? avgPct - state.currentWinner.avgPct : avgPct;
+    // Plateau reasoning always compares against the last *confirmed*
+    // improvement (state.confirmedBest), not the raw-pct winner that feeds
+    // prompt context. Otherwise the CI comparison target would ratchet
+    // upward with every small raw-pct gain and prematurely trigger STALE.
+    const confirmed = state.confirmedBest;
+    const bestGain = confirmed ? avgPct - confirmed.avgPct : avgPct;
 
     // Prefer CI-overlap reasoning: an iteration is only a meaningful gain
-    // over the best-so-far if its CI95 lower bound clears the best's CI95
-    // upper bound. Falls back to the fixed-threshold rule when stats are
-    // missing (e.g. extraction failures) or plateauMode is pinned.
-    const bestStats = state.currentWinner?.stats;
+    // over the last confirmed best if its CI95 lower bound clears the
+    // confirmed best's CI95 upper bound. Falls back to the fixed-threshold
+    // rule when stats are missing or plateauMode is pinned.
+    const bestStats = confirmed?.stats;
     const canUseCiOverlap = plateauMode === 'ci_overlap'
       && bestStats
       && Number.isFinite(stats.ci95Low)
@@ -839,7 +851,7 @@ async function runSingleIteration({
         currentCi95Low: stats.ci95Low,
         bestCi95High: bestStats.ci95High,
       };
-    } else if (state.currentWinner) {
+    } else if (confirmed) {
       meaningfulImprovement = bestGain >= plateauMinImprovement;
       plateauSignal = {
         rule: 'fixed_threshold',
@@ -853,9 +865,16 @@ async function runSingleIteration({
       plateauSignal = { rule: 'first_iteration', passed: true };
     }
 
+    // currentWinner tracks the raw-pct best for prompt feedback (leaderboard,
+    // current-winner code, etc.) and updates on every raw improvement.
     state.currentWinner = { iter, avgPct, avgTicks, algoName, stats };
     state.currentWinnerCode = rawCode;
     state.currentWinnerName = algoName;
+    // confirmedBest is the comparison baseline for plateau detection and only
+    // advances when the new iteration clears the statistical bar.
+    if (meaningfulImprovement) {
+      state.confirmedBest = { iter, avgPct, avgTicks, algoName, stats };
+    }
     console.log(`  ★ New best so far: ${avgPct}%`);
   }
 

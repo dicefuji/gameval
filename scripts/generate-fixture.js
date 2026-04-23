@@ -67,6 +67,7 @@ function simulateModel(modelKey, modelIdx) {
   const iterations = [];
   let lastSuccessfulAvgPct = null;
   let currentWinner = null;
+  let confirmedBest = null;
 
   for (let it = 0; it < fixtures.length; it++) {
     const iter = it + 1;
@@ -115,19 +116,26 @@ function simulateModel(modelKey, modelIdx) {
     if (lastSuccessfulAvgPct !== null && avgPct < lastSuccessfulAvgPct) flags.add('REGRESSION_VS_PRIOR');
     if (currentWinner && avgPct < currentWinner.avgPct) flags.add('REGRESSION_VS_BEST');
 
+    // Plateau reasoning always compares against the last *confirmed* best,
+    // not against currentWinner (which tracks raw-pct gains for prompt
+    // context). This prevents the CI comparison target from ratcheting
+    // upward on every small raw gain.
     let plateauSignal = null;
     if (!currentWinner) {
       plateauSignal = { rule: 'first_iteration', passed: true };
       currentWinner = { iter, avgPct, avgTicks, algoName, stats };
+      confirmedBest = { iter, avgPct, avgTicks, algoName, stats };
     } else if (avgPct > currentWinner.avgPct) {
-      const ciOverlap = stats.ci95Low > currentWinner.stats.ci95High;
+      const baseline = confirmedBest || currentWinner;
+      const ciOverlap = stats.ci95Low > baseline.stats.ci95High;
       plateauSignal = {
         rule: 'ci_overlap',
         passed: ciOverlap,
         currentCi95Low: stats.ci95Low,
-        bestCi95High: currentWinner.stats.ci95High,
+        bestCi95High: baseline.stats.ci95High,
       };
-      if (ciOverlap) currentWinner = { iter, avgPct, avgTicks, algoName, stats };
+      currentWinner = { iter, avgPct, avgTicks, algoName, stats };
+      if (ciOverlap) confirmedBest = { iter, avgPct, avgTicks, algoName, stats };
     }
 
     iterations.push({
