@@ -871,11 +871,12 @@
   function initTheme() {
     const saved = localStorage.getItem('arena-war-theme');
     const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    // Default is now the warm light theme. Only fall back to dark when the OS asks for it.
     const initial = saved || (prefersDark ? 'dark' : 'light');
     setTheme(initial);
 
     themeToggle.addEventListener('click', () => {
-      const current = document.documentElement.getAttribute('data-theme') || 'dark';
+      const current = document.documentElement.getAttribute('data-theme') || 'light';
       const next = current === 'dark' ? 'light' : 'dark';
       setTheme(next);
     });
@@ -884,6 +885,7 @@
   function setTheme(theme) {
     document.documentElement.setAttribute('data-theme', theme);
     localStorage.setItem('arena-war-theme', theme);
+    // Icon/label describe the action on click (opposite of the current theme).
     if (themeIcon) themeIcon.textContent = theme === 'dark' ? '\u2600' : '\u263E';
     if (themeLabel) themeLabel.textContent = theme === 'dark' ? 'Light' : 'Dark';
     // Redraw canvas if needed since background color depends on theme
@@ -900,7 +902,46 @@
     }
   }
 
+  /* ─── Page TOC (sticky left sidebar) ─── */
+  function buildPageToc() {
+    const nav = document.getElementById('page-toc');
+    const linkHost = document.getElementById('page-toc-links');
+    if (!nav || !linkHost) return;
+
+    const sections = Array.from(document.querySelectorAll('section[data-toc][id]'))
+      .filter(sec => sec.offsetParent !== null);
+    if (sections.length === 0) {
+      nav.hidden = true;
+      return;
+    }
+
+    linkHost.innerHTML = sections
+      .map(sec => `<a href="#${sec.id}" data-target="${sec.id}">${escapeHtml(sec.dataset.toc)}</a>`)
+      .join('');
+    nav.hidden = false;
+
+    const anchors = Array.from(linkHost.querySelectorAll('a'));
+    const byId = new Map(anchors.map(a => [a.dataset.target, a]));
+
+    if (typeof IntersectionObserver !== 'function') return;
+
+    const observer = new IntersectionObserver(
+      entries => {
+        const visible = entries
+          .filter(e => e.isIntersecting)
+          .sort((a, b) => a.target.getBoundingClientRect().top - b.target.getBoundingClientRect().top)[0];
+        if (!visible) return;
+        anchors.forEach(a => a.classList.remove('active'));
+        const active = byId.get(visible.target.id);
+        if (active) active.classList.add('active');
+      },
+      { rootMargin: '-20% 0px -70% 0px', threshold: 0 }
+    );
+
+    sections.forEach(sec => observer.observe(sec));
+  }
+
   // Initialize
   initTheme();
-  loadResults();
+  loadResults().then(buildPageToc).catch(() => {});
 })();

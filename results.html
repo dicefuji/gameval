@@ -7,6 +7,19 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Source+Serif+Pro:ital,wght@0,400;0,600;0,700;1,400&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <script>
+    // FOUC guard: set data-theme before the body paints.
+    (function () {
+      try {
+        var saved = localStorage.getItem('arena-war-theme');
+        var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        var theme = saved || (prefersDark ? 'dark' : 'light');
+        document.documentElement.setAttribute('data-theme', theme);
+      } catch (e) {
+        document.documentElement.setAttribute('data-theme', 'light');
+      }
+    })();
+  </script>
   <style>
     /* ─── Typography stack ─── */
     :root {
@@ -818,6 +831,57 @@
       stroke-dasharray: 4 4;
     }
 
+    /* ─── Page TOC (sticky left sidebar) ─── */
+    .page-toc {
+      position: fixed;
+      top: 3rem;
+      left: max(1.5rem, calc((100vw - 1120px) / 2 - 220px));
+      width: 200px;
+      max-height: calc(100vh - 6rem);
+      overflow-y: auto;
+      font-family: var(--font-sans);
+      font-size: 12px;
+      line-height: 1.5;
+      color: var(--text-muted);
+      border-left: 1px solid var(--border-subtle);
+      padding-left: 14px;
+      z-index: 50;
+      transition: opacity var(--transition-base);
+    }
+
+    .page-toc-title {
+      font-size: 10px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 10px;
+      font-weight: 600;
+    }
+
+    .page-toc a {
+      display: block;
+      color: var(--text-muted);
+      text-decoration: none;
+      padding: 3px 0;
+      border-left: 2px solid transparent;
+      padding-left: 8px;
+      margin-left: -10px;
+      transition: color var(--transition-fast), border-color var(--transition-fast);
+    }
+
+    .page-toc a:hover {
+      color: var(--text-primary);
+    }
+
+    .page-toc a.active {
+      color: var(--text-primary);
+      border-left-color: var(--accent-orange);
+    }
+
+    @media (max-width: 1400px) {
+      .page-toc { display: none; }
+    }
+
     /* ─── Animations ─── */
     @keyframes fadeInUp {
       from { opacity: 0; transform: translateY(12px); }
@@ -842,34 +906,42 @@
     }
 
     @media (max-width: 640px) {
-      #root { padding: 1rem 0.875rem 2rem; }
-      h1 { font-size: 22px; }
+      #root { padding: 2rem 1rem 2.5rem; }
+      body { font-size: 16px; }
+      h1 { font-size: 28px; }
       .summary-grid { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
       .verdict-grid { grid-template-columns: 1fr; }
       .read-guide { grid-template-columns: 1fr; }
       .toolbar { flex-direction: column; align-items: stretch; }
       select { width: 100%; }
+      .panel { padding: 16px 18px; }
     }
   </style>
 </head>
 <body>
+  <nav class="page-toc" id="page-toc" aria-label="Section navigation" hidden>
+    <div class="page-toc-title">On this page</div>
+    <div id="page-toc-links"></div>
+  </nav>
   <div id="root">
     <div class="page-header">
       <div>
-        <h1>arena war — results dashboard <span id="version-badge" class="version-badge" hidden></span></h1>
+        <h1>Arena War <span id="version-badge" class="version-badge" hidden></span></h1>
+        <div class="byline">An iterative coding benchmark for LLM spatial-strategy algorithms.</div>
         <p class="subhead">
-          Compare how recent models perform on the same iterative Arena War eval: initial algorithm quality, learning curve over repeated feedback, best final result, and representative board snapshots.
+          Arena War compares how recent language models improve a territory algorithm over repeated rounds of adversarial feedback. Each model writes code, plays against shared opponents, reads the reward signal, and tries again. We report the learning curve, the failure taxonomy, and a representative board so you can see what actually happened.
         </p>
       </div>
       <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle light/dark mode">
-        <span id="theme-icon">&#9788;</span>
-        <span id="theme-label">Light</span>
+        <span id="theme-icon">&#9790;</span>
+        <span id="theme-label">Dark</span>
       </button>
     </div>
 
     <div class="page-links">
       <a href="results.html">results dashboard</a>
       <a href="arena.html">arena sandbox</a>
+      <a href="benchmark-methodology.md" target="_blank" rel="noopener noreferrer">methodology</a>
     </div>
 
     <div id="dashboard">
@@ -878,7 +950,7 @@
       </div>
 
       <div id="content" style="display:none">
-        <section class="section panel animate-in">
+        <section class="section panel animate-in" id="s-read" data-toc="How to read">
           <div class="panel-title">How To Read This Run</div>
           <div class="read-guide">
             <div class="guide-card">
@@ -900,32 +972,32 @@
           </div>
         </section>
 
-        <section class="section panel animate-in animate-in-delay-1">
+        <section class="section panel animate-in animate-in-delay-1" id="s-measures" data-toc="What it measures">
           <div class="panel-title">What This Benchmark Measures</div>
           <p class="methodology-note">
             Arena War measures <strong>iterative algorithm improvement under adversarial pressure</strong>: a model must read the task, write code, learn from reward signals, and produce stronger follow-up algorithms over repeated rounds. It does <strong>not</strong> claim to measure general coding ability from one chart. Cross-model comparison is meaningful here because the protocol is shared across the run. For deeper methodology, see <a href="benchmark-methodology.md" target="_blank" rel="noopener noreferrer">benchmark-methodology.md</a>.
           </p>
         </section>
 
-        <section class="section panel animate-in animate-in-delay-2">
+        <section class="section panel animate-in animate-in-delay-2" id="s-summary" data-toc="Summary">
           <div class="panel-title">Benchmark Summary</div>
-          <p class="section-copy">Use this row as the top-line read: who finished strongest, how many models were compared, and how much benchmark evidence this run contains.</p>
+          <p class="section-copy">Top-line read: who finished strongest, how many models were compared, and how much benchmark evidence this run contains.</p>
           <div id="summary-grid" class="grid summary-grid"></div>
         </section>
 
-        <section class="section panel animate-in animate-in-delay-2">
+        <section class="section panel animate-in animate-in-delay-2" id="s-verdict" data-toc="Verdict">
           <div class="panel-title">Comparison Verdict</div>
           <p class="section-copy">A good result is primarily relative: stronger final performance and faster improvement than peers on the same run.</p>
           <div id="verdict-grid" class="grid verdict-grid"></div>
         </section>
 
-        <section class="section panel animate-in animate-in-delay-3">
+        <section class="section panel animate-in animate-in-delay-3" id="s-protocol" data-toc="Protocol">
           <div class="panel-title">Shared Protocol</div>
           <p class="section-copy">This strip explains why the comparison is apples-to-apples. Every model shown below was evaluated under this same run configuration.</p>
           <div id="protocol-grid" class="grid summary-grid"></div>
         </section>
 
-        <section class="section panel animate-in animate-in-delay-3">
+        <section class="section panel animate-in animate-in-delay-3" id="s-comparison" data-toc="Comparison">
           <div class="panel-title">Model Comparison Table</div>
           <p class="section-copy">Read this before drilling into individual iterations. It shows who finished best, who improved most, and how each run ended.</p>
           <div class="comparison-table-wrap">
@@ -949,33 +1021,33 @@
           <p class="small-note">Ranking is ordered by strongest best result first. Ties fall to the earlier best iteration.</p>
         </section>
 
-        <section class="section panel animate-in animate-in-delay-4">
-          <div class="panel-title">Learning Curves</div>
+        <section class="section panel animate-in animate-in-delay-4" id="s-learning" data-toc="Learning curves">
+          <div class="panel-title">Figure 1 &mdash; Learning Curves</div>
           <div class="chart-wrap" id="chart-container" style="position:relative;">
             <svg id="learning-curve" viewBox="0 0 900 320" preserveAspectRatio="xMidYMid meet"></svg>
             <div id="chart-tooltip" class="chart-tooltip"></div>
           </div>
           <div id="chart-legend" class="chart-legend"></div>
-          <p class="small-note">Each line shows mean territory percentage by eval iteration for one model. Shaded bands show &plusmn;1 std dev when available. The main read is relative trajectory: who improves fastest and who ends strongest.</p>
+          <p class="figure-caption"><strong>Figure 1:</strong> Mean territory percentage by eval iteration, one line per model. Shaded bands show &plusmn;1 standard deviation across the N games per iteration. Read this <em>relatively</em> &mdash; the main signals are (a) final height at the latest iteration, (b) slope of improvement across iterations, and (c) the width of the band, which tells you how much of the difference between models is noise.</p>
         </section>
 
         <!-- TODO: Populate with actual head-to-head matchup data when available -->
-        <section class="section panel animate-in animate-in-delay-4">
-          <div class="panel-title">Head-to-Head Matrix</div>
+        <section class="section panel animate-in animate-in-delay-4" id="s-head-to-head" data-toc="Head-to-head">
+          <div class="panel-title">Figure 2 &mdash; Head-to-Head Matrix</div>
           <p class="section-copy">Win-rate matrix across models when their best algorithms face each other directly. Requires at least two model runs in the same eval.</p>
           <div id="head-to-head-matrix" class="placeholder-grid">
             <div class="placeholder-cell">Matrix will populate when multi-model data is available</div>
           </div>
         </section>
 
-        <section class="section panel animate-in animate-in-delay-4">
-          <div class="panel-title">Failure Taxonomy</div>
+        <section class="section panel animate-in animate-in-delay-4" id="s-failures" data-toc="Failure taxonomy">
+          <div class="panel-title">Figure 3 &mdash; Failure Taxonomy</div>
           <p class="section-copy">How often each model's iterations hit an annotated failure mode: extraction errors, runtime crashes, out-of-bounds exploits, timeouts, regressions, and plateau stalls. Use this to distinguish models that scored well from models that scored well <em>and</em> stayed stable.</p>
           <div id="failure-taxonomy" class="failure-grid"></div>
-          <p class="small-note">Counts are per-iteration occurrences across this run. An iteration may carry multiple flags (e.g. a regression that also stalled).</p>
+          <p class="figure-caption"><strong>Figure 3:</strong> Counts are per-iteration occurrences across this run. An iteration may carry multiple flags (for instance, a regression that also stalled). A tall bar is not necessarily worse &mdash; it depends which flag it is. A stack of <em>syntax errors</em> means the model failed to emit runnable code; a stack of <em>regressions</em> means the model kept writing runnable code but lost ground to its own earlier attempts.</p>
         </section>
 
-        <section class="section panel animate-in animate-in-delay-5">
+        <section class="section panel animate-in animate-in-delay-5" id="s-inspect" data-toc="Inspect a run">
           <div class="panel-title">Inspect A Model Run</div>
           <div class="toolbar">
             <label>
