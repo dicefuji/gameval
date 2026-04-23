@@ -823,13 +823,19 @@ async function runSingleIteration({
   state.leaderboard.push({ name: algoName, avgPct, runs: gamesPerIter, iter });
   state.leaderboard.sort((a, b) => b.avgPct - a.avgPct);
 
+  // Plateau reasoning and prompt-context tracking are split into two gates so
+  // that iterations scoring between confirmedBest and currentWinner still get
+  // CI-evaluated. Gating plateau on currentWinner would silently skip those
+  // iterations and let plateauStreak ratchet up to a premature STALE.
   let meaningfulImprovement = false;
   let plateauSignal = null;
-  if (!state.currentWinner || avgPct > state.currentWinner.avgPct) {
-    // Plateau reasoning always compares against the last *confirmed*
-    // improvement (state.confirmedBest), not the raw-pct winner that feeds
-    // prompt context. Otherwise the CI comparison target would ratchet
-    // upward with every small raw-pct gain and prematurely trigger STALE.
+
+  // Gate 1: plateau evaluation. Compares against the last *confirmed*
+  // improvement (state.confirmedBest). An iteration is eligible for
+  // CI-overlap / fixed-threshold evaluation as soon as its raw avgPct
+  // could beat confirmedBest — even if it is below an un-confirmed
+  // currentWinner that was set by a prior non-CI-significant raw gain.
+  if (!state.confirmedBest || avgPct > state.confirmedBest.avgPct) {
     const confirmed = state.confirmedBest;
     const bestGain = confirmed ? avgPct - confirmed.avgPct : avgPct;
 
@@ -865,16 +871,21 @@ async function runSingleIteration({
       plateauSignal = { rule: 'first_iteration', passed: true };
     }
 
-    // currentWinner tracks the raw-pct best for prompt feedback (leaderboard,
-    // current-winner code, etc.) and updates on every raw improvement.
-    state.currentWinner = { iter, avgPct, avgTicks, algoName, stats };
-    state.currentWinnerCode = rawCode;
-    state.currentWinnerName = algoName;
     // confirmedBest is the comparison baseline for plateau detection and only
     // advances when the new iteration clears the statistical bar.
     if (meaningfulImprovement) {
       state.confirmedBest = { iter, avgPct, avgTicks, algoName, stats };
     }
+  }
+
+  // Gate 2: prompt-context / leaderboard tracking. currentWinner feeds the
+  // iterative prompt ("CURRENT WINNER CODE") and updates on every raw-pct
+  // gain so the model always sees the best runnable algorithm it has
+  // produced, regardless of CI-significance.
+  if (!state.currentWinner || avgPct > state.currentWinner.avgPct) {
+    state.currentWinner = { iter, avgPct, avgTicks, algoName, stats };
+    state.currentWinnerCode = rawCode;
+    state.currentWinnerName = algoName;
     console.log(`  ★ New best so far: ${avgPct}%`);
   }
 

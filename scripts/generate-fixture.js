@@ -116,26 +116,30 @@ function simulateModel(modelKey, modelIdx) {
     if (lastSuccessfulAvgPct !== null && avgPct < lastSuccessfulAvgPct) flags.add('REGRESSION_VS_PRIOR');
     if (currentWinner && avgPct < currentWinner.avgPct) flags.add('REGRESSION_VS_BEST');
 
-    // Plateau reasoning always compares against the last *confirmed* best,
-    // not against currentWinner (which tracks raw-pct gains for prompt
-    // context). This prevents the CI comparison target from ratcheting
-    // upward on every small raw gain.
+    // Plateau reasoning and prompt-context tracking are split into two gates
+    // so that iterations scoring between confirmedBest and currentWinner still
+    // get CI-evaluated. Gating plateau evaluation on currentWinner would
+    // silently skip those iterations. This mirrors eval-runner.js.
     let plateauSignal = null;
-    if (!currentWinner) {
+
+    // Gate 1: plateau evaluation against confirmedBest.
+    if (!confirmedBest) {
       plateauSignal = { rule: 'first_iteration', passed: true };
-      currentWinner = { iter, avgPct, avgTicks, algoName, stats };
       confirmedBest = { iter, avgPct, avgTicks, algoName, stats };
-    } else if (avgPct > currentWinner.avgPct) {
-      const baseline = confirmedBest || currentWinner;
-      const ciOverlap = stats.ci95Low > baseline.stats.ci95High;
+    } else if (avgPct > confirmedBest.avgPct) {
+      const ciOverlap = stats.ci95Low > confirmedBest.stats.ci95High;
       plateauSignal = {
         rule: 'ci_overlap',
         passed: ciOverlap,
         currentCi95Low: stats.ci95Low,
-        bestCi95High: baseline.stats.ci95High,
+        bestCi95High: confirmedBest.stats.ci95High,
       };
-      currentWinner = { iter, avgPct, avgTicks, algoName, stats };
       if (ciOverlap) confirmedBest = { iter, avgPct, avgTicks, algoName, stats };
+    }
+
+    // Gate 2: currentWinner tracks raw-pct best for prompt context.
+    if (!currentWinner || avgPct > currentWinner.avgPct) {
+      currentWinner = { iter, avgPct, avgTicks, algoName, stats };
     }
 
     iterations.push({
