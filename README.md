@@ -110,7 +110,7 @@ Defines the first-round prompt and the iterative prompt. Later prompts reuse the
 Read `eval-results.json` and present the benchmark as a comparison product: learning curves, protocol/trust metadata, relative comparison verdicts, per-iteration inspection, representative board snapshots, final model rankings, a per-model Failure Taxonomy panel (bar rows per flag with a one-sentence summary), and a page-header version badge whose hover tooltip shows the full eval changelog.
 
 ### `arena.html`, `engine.js`, and `ui.js`
-Provide the manual arena sandbox. This is where algorithms can be watched and inspected directly, and where best-vs-best replay modes can later live. The arena's "Load algorithm into seat 0" picker is populated by `registry.js` so every baseline and every model × iteration from the latest eval output can be dropped into the sandbox in one click.
+Provide the manual arena sandbox. This is where algorithms can be watched and inspected directly, and where best-vs-best replay modes can later live. The arena's "Load algorithm into seat 0" picker is populated by `registry.js` so every baseline and every model × iteration from the latest eval output can be dropped into the sandbox in one click. Phase 9B redesigned the page around a two-pane canvas/controls layout, shared design tokens, and a light/dark theme toggle matching `results.html`; the paste-your-own-algorithm flow lives behind an `Advanced: paste a custom algorithm` disclosure at the bottom of the page so no placeholder code is visible on first load.
 
 ### `algorithms.js`
 Contains the shared baseline opponents used by the benchmark. These are the fixed strategies that keep the comparison fair across models.
