@@ -43,6 +43,8 @@
   const referencePanel = document.getElementById('reference-panel');
   const referenceSummary = document.getElementById('reference-summary');
   const referenceGrid = document.getElementById('reference-grid');
+  const pairwisePanel = document.getElementById('pairwise-panel');
+  const pairwiseGrid = document.getElementById('pairwise-grid');
   const filterStrip = document.getElementById('leaderboard-filter');
   const filterCount = document.getElementById('filter-count');
 
@@ -312,6 +314,7 @@
     renderSelectors();
     renderSelectedRun();
     renderFollowOn();
+    renderPairwisePanel();
     renderHeadToHeadMatrix();
     renderFailureTaxonomy();
   }
@@ -904,34 +907,74 @@
     }).join('');
   }
 
-  /* ─── Head-to-Head Matrix placeholder ─── */
+  /* ─── Pairwise Comparisons panel ─── */
+  // Formats a pair card for state.results.pairwiseComparisons[i]. Reuses the
+  // verdict triage the runner already emitted (a_better / b_better / tied).
+  function renderPairwisePanel() {
+    if (!pairwisePanel || !pairwiseGrid) return;
+    const pairs = Array.isArray(state.results?.pairwiseComparisons)
+      ? state.results.pairwiseComparisons
+      : [];
+    if (!pairs.length) { pairwisePanel.hidden = true; return; }
+    pairwisePanel.hidden = false;
+    pairwiseGrid.innerHTML = pairs.map(p => {
+      const delta = Number(p.meanDelta);
+      const deltaClass = !Number.isFinite(delta) ? 'zero' : (delta > 0 ? 'pos' : (delta < 0 ? 'neg' : 'zero'));
+      const ciLow = Number.isFinite(p.ciLow) ? p.ciLow.toFixed(1) : '?';
+      const ciHigh = Number.isFinite(p.ciHigh) ? p.ciHigh.toFixed(1) : '?';
+      let verdictText; let verdictClass;
+      if (p.verdict === 'a_better') { verdictText = `${p.modelA} better (CI excludes zero)`; verdictClass = 'a-better'; }
+      else if (p.verdict === 'b_better') { verdictText = `${p.modelB} better (CI excludes zero)`; verdictClass = 'b-better'; }
+      else { verdictText = 'Not distinguishable (CI overlaps zero)'; verdictClass = 'tied'; }
+      return `
+        <div class="pairwise-card">
+          <div class="pw-pair">${escapeHtml(p.modelA)} · iter ${escapeHtml(String(p.iterA))} <span style="color:var(--text-muted); font-weight:400;">vs</span> ${escapeHtml(p.modelB)} · iter ${escapeHtml(String(p.iterB))}</div>
+          <div class="pw-delta ${deltaClass}">${escapeHtml(formatPercentDelta(delta))}</div>
+          <div class="pw-ci">95% CI [${ciLow}, ${ciHigh}] · n=${escapeHtml(String(p.nA ?? '?'))}/${escapeHtml(String(p.nB ?? '?'))} · bootstrap ${escapeHtml(String(p.bootstrapIterations ?? 4000))}</div>
+          <div class="pw-verdict ${verdictClass}">${escapeHtml(verdictText)}</div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  /* ─── Head-to-Head Matrix ─── */
+  // Consumes state.results.headToHead.pairs (which the runner emits per
+  // Phase 8B, one entry per unordered {A,B} pair). Cells are oriented row-vs-col:
+  // when the stored pair's modelA matches the cell's colModel we flip wins/delta.
   function renderHeadToHeadMatrix() {
     const rankings = state.results.rankings || [];
     if (rankings.length < 2) {
-      headToHeadMatrix.innerHTML = `
-        <div class="placeholder-cell">At least two model runs required for head-to-head matrix</div>
-      `;
+      headToHeadMatrix.innerHTML = `<div class="placeholder-cell">At least two model runs required for head-to-head matrix</div>`;
       return;
     }
-
-    // TODO: Replace with actual head-to-head win-rate data when available in eval-results.json
     const models = rankings.map(r => r.model);
-    const matrixHTML = models.map((rowModel, rowIdx) => {
-      const cells = models.map((colModel, colIdx) => {
-        if (rowIdx === colIdx) {
-          return `<div class="placeholder-cell" style="background:var(--bg-chip); font-weight:600;">—</div>`;
-        }
-        // Placeholder: would show win % of rowModel vs colModel
-        return `<div class="placeholder-cell">${escapeHtml(rowModel)} vs ${escapeHtml(colModel)}<br><span style="font-size:11px; color:var(--text-muted)">pending replay data</span></div>`;
-      }).join('');
-      return `<div style="display:contents">${cells}</div>`;
-    }).join('');
+    const pairs = Array.isArray(state.results?.headToHead?.pairs) ? state.results.headToHead.pairs : [];
+    const cellHTML = models.map(rowModel => models.map(colModel => {
+      if (rowModel === colModel) return `<div class="h2h-cell diag">—</div>`;
+      const pair = pairs.find(p =>
+        (p.modelA === rowModel && p.modelB === colModel) ||
+        (p.modelA === colModel && p.modelB === rowModel));
+      if (!pair) return `<div class="h2h-cell"><div style="color:var(--text-muted); font-size:11px;">no data</div></div>`;
+      const flip = pair.modelA === colModel;
+      const rowWins = flip ? pair.winsB : pair.winsA;
+      const colWins = flip ? pair.winsA : pair.winsB;
+      const delta = (flip ? -1 : 1) * Number(pair.meanDelta);
+      const ciLow = (flip ? -1 : 1) * Number(pair.ciHigh);
+      const ciHigh = (flip ? -1 : 1) * Number(pair.ciLow);
+      const lo = Math.min(ciLow, ciHigh), hi = Math.max(ciLow, ciHigh);
+      const scoreClass = !Number.isFinite(delta) ? 'tied' : (pair.significant ? (delta > 0 ? 'pos' : 'neg') : 'tied');
+      const drawsSegment = pair.draws > 0 ? ` <span style="color:var(--text-muted); font-size:11px;">(${escapeHtml(String(pair.draws))} draw${pair.draws === 1 ? '' : 's'})</span>` : '';
+      return `
+        <div class="h2h-cell">
+          <div class="h2h-score ${scoreClass}">${escapeHtml(String(rowWins))}–${escapeHtml(String(colWins))}${drawsSegment}</div>
+          <div class="h2h-meta">Δ ${escapeHtml(formatPercentDelta(delta))} · CI [${lo.toFixed(1)}, ${hi.toFixed(1)}]</div>
+        </div>`;
+    }).join('')).join('');
 
     headToHeadMatrix.innerHTML = `
-      <div style="display:grid; grid-template-columns: repeat(${models.length}, minmax(140px, 1fr)); gap:10px; overflow-x:auto;">
-        ${matrixHTML}
-      </div>
-    `;
+      <div style="display:grid; grid-template-columns: repeat(${models.length}, minmax(150px, 1fr)); gap:10px; overflow-x:auto;">
+        ${cellHTML}
+      </div>`;
   }
 
   /* ─── Failure Taxonomy ─── */
