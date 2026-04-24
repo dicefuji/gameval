@@ -694,6 +694,13 @@
     let summary;
     if (losers.length === entries.length && entries.length > 1) {
       summary = `All ${entries.length} models lose to the held-out reference — median Δ = ${formatPercentDelta(medianDelta)}, CI excludes zero for every model.`;
+    } else if (losers.length && winners) {
+      const parts = [
+        `${winners} significantly beat${winners === 1 ? 's' : ''} the reference`,
+        `${losers.length} significantly lose${losers.length === 1 ? 's' : ''}`,
+      ];
+      if (tied) parts.push(`${tied} not distinguishable`);
+      summary = `${parts.join(', ')}. Median Δ across all models: ${formatPercentDelta(medianDelta)}. Reference: ${referenceLabel}.`;
     } else if (losers.length) {
       summary = `${losers.length} of ${entries.length} model${entries.length === 1 ? '' : 's'} significantly lose to the reference (CI excludes zero). Median Δ across all models: ${formatPercentDelta(medianDelta)}.`;
     } else if (winners === entries.length && entries.length > 1) {
