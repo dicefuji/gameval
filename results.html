@@ -1045,7 +1045,7 @@
 
         <section class="section panel animate-in animate-in-delay-4">
           <div class="panel-title">Game Rules &amp; Outcome Modes</div>
-          <p class="section-copy">Arena War is a 4-player territorial expansion game on a 40×40 circular grid. Each tick, every algorithm returns a <em>frontier</em> of at most 5 candidate cells; the engine enforces claim limits and resolves conflicts (same-tick collisions stay unclaimed). Games end in one of three distinct modes, every game carries its <code>terminationReason</code> in the output JSON (<code>schemaVersion ≥ 7</code>).</p>
+          <p class="section-copy">Arena War is a 4-player territorial expansion game on a circular grid (default 60×60, ~2724 in-play cells). Each tick, every algorithm returns a <em>frontier</em> of up to <code>max(1, floor(N/8))</code> candidate cells (7 cells/tick at N=60); the engine enforces claim limits and resolves conflicts (same-tick collisions stay unclaimed). Games end in one of three distinct modes, every game carries its <code>terminationReason</code> in the output JSON (<code>schemaVersion ≥ 7</code>). The exact grid size for this run is shown in the Shared Protocol strip above.</p>
           <div class="read-guide">
             <div class="guide-card">
               <strong>board_full — the clean win</strong>
@@ -1167,8 +1167,8 @@
   </div>
 
   <script src="algorithms.js"></script>
-  <script src="engine.js"></script>
+  <script src="engine.js?v=trv1"></script>
   <script src="registry.js"></script>
-  <script src="results.js"></script>
+  <script src="results.js?v=trv1"></script>
 </body>
 </html>

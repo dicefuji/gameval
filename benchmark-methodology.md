@@ -400,7 +400,7 @@ The preceding sections are the abstract methodology framework we commit to. This
 
 ### 9.1 — The game in one paragraph
 
-Arena War is a multi-player territorial expansion game played on a circular `N × N` grid (default `N = 40`, ~1257 in-play cells out of 1600). Each player controls a starting 3×3 "seed" patch placed evenly around an inner ring. On every tick, each player's algorithm is called with its player id, the current grid, and the grid size, and returns a *frontier* — a list of `[row, col]` candidate cells it wants to claim this tick. The engine enforces a per-tick **claim budget** of `max(1, floor(N/8))` cells per player (5 cells/tick at `N = 40`). Unclaimed cells inside the circular play mask are `EMPTY (-1)`; cells outside the mask are `null` and not playable. Cells that two or more players request on the same tick enter a **conflict state** and stay unclaimed. Territory is scored as `score[i] = count(grid[r][c] === i)`, and territory percentage is `score[i] / totalCells`, where `totalCells` counts all in-circle cells (owned + still EMPTY). The winner is the player with the highest territory percentage when the game ends.
+Arena War is a multi-player territorial expansion game played on a circular `N × N` grid. The eval-runner default and the `arena.html` default are both `N = 60` (2724 in-play cells out of 3600); the arena sandbox additionally offers `N = 40` (1184 in-play cells) and `N = 80` (4872 in-play cells). Each player controls a starting 3×3 "seed" patch placed evenly around an inner ring. On every tick, each player's algorithm is called with its player id, the current grid, and the grid size, and returns a *frontier* — a list of `[row, col]` candidate cells it wants to claim this tick. The engine enforces a per-tick **claim budget** of `max(1, floor(N/8))` cells per player — 7 cells/tick at the `N = 60` default (5 at `N = 40`, 10 at `N = 80`). Unclaimed cells inside the circular play mask are `EMPTY (-1)`; cells outside the mask are `null` and not playable. Cells that two or more players request on the same tick enter a **conflict state** and stay unclaimed. Territory is scored as `score[i] = count(grid[r][c] === i)`, and territory percentage is `score[i] / totalCells`, where `totalCells` counts all in-circle cells (owned + still EMPTY). The winner is the player with the highest territory percentage when the game ends.
 
 ### 9.2 — Outcome modes: how a game ends
 
@@ -424,7 +424,7 @@ Stalemate frequency is an *informative metric per model*. A model whose algorith
 
 #### Mode 3 — `max_ticks` (safety cap — should never fire)
 
-The node eval harness (`eval-runner.js` `runGame()`) enforces `MAX_TICKS = size * size` as a runaway-protection bound. Under normal play, games terminate via `board_full` or `stalemate` well before this bound (a `40 × 40` game bounded at 1600 ticks will almost always finish within ~100–200). Observing `max_ticks` in production data is a signal that an algorithm is livelocking — e.g. it's proposing and re-proposing cells without ever making progress in a way that doesn't count as "no change" to the engine. Treat it as a bug to investigate, not a game outcome. The browser engine (`engine.js`) does *not* enforce a max-tick cap; in the sandbox, livelocking algorithms will simply run until the user stops them.
+The node eval harness (`eval-runner.js` `runGame()`) enforces `MAX_TICKS = size * size` as a runaway-protection bound. Under normal play, games terminate via `board_full` or `stalemate` well before this bound (a `60 × 60` game bounded at 3600 ticks will almost always finish within ~150–400). Observing `max_ticks` in production data is a signal that an algorithm is livelocking — e.g. it's proposing and re-proposing cells without ever making progress in a way that doesn't count as "no change" to the engine. Treat it as a bug to investigate, not a game outcome. The browser engine (`engine.js`) does *not* enforce a max-tick cap; in the sandbox, livelocking algorithms will simply run until the user stops them.
 
 ### 9.3 — Why a 21% winner at tick 145 with unclaimed territory is a legitimate result
 
@@ -442,7 +442,7 @@ The exact algorithm every tick, in order:
 4. All non-conflicted claims are applied atomically at the end of the tick.
 5. `tick++`, check termination (Mode 1 first, then Mode 2).
 
-The claims-per-tick budget is what makes the game iterative rather than one-shot. At `N = 40`, players can claim 5 cells/tick. A 1257-cell circle therefore needs at least `1257 / (5 × 4) ≈ 63` ticks to fill even with zero conflicts.
+The claims-per-tick budget is what makes the game iterative rather than one-shot. At `N = 60`, players can claim 7 cells/tick. A 2724-cell circle therefore needs at least `2724 / (7 × 4) ≈ 98` ticks to fill even with zero conflicts.
 
 ### 9.5 — What this means for LLM evaluation
 

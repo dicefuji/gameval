@@ -39,7 +39,7 @@ That loop measures both raw coding ability and iterative learning ability. The o
 
 ## Game Rules and Outcome Modes
 
-Arena War is a 4-player territorial expansion game on a 40×40 circular grid (~1257 in-play cells). Each tick, every player's algorithm returns a *frontier* of at most 5 candidate cells; the engine enforces claim limits, resolves conflicts (two players requesting the same cell on the same tick leave it unclaimed), and scores territory as `score[i] / totalCells`.
+Arena War is a 4-player territorial expansion game on a circular grid. The default grid size is 60×60 (~2724 in-play cells); the arena sandbox also offers 40×40 (~1184 cells) and 80×80 (~4872 cells). Each tick, every player's algorithm returns a *frontier* of up to `max(1, floor(N/8))` candidate cells (7 cells/tick at N=60, 5 at N=40, 10 at N=80); the engine enforces claim limits, resolves conflicts (two players requesting the same cell on the same tick leave it unclaimed), and scores territory as `score[i] / totalCells`.
 
 Every game ends in exactly one of three modes, recorded as `terminationReason` in the output JSON (`schemaVersion ≥ 7`):
 
