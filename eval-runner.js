@@ -24,7 +24,7 @@ const path = require('path');
 const { ALGOS, ALGO_NAMES } = require('./algorithms');
 const { REFERENCE: HELD_OUT_REFERENCE, REFERENCE_NAME: HELD_OUT_REFERENCE_NAME } = require('./reference-algorithms');
 const { BASELINE_PROMPT, buildIterativePrompt, buildAdversarialPrompt } = require('./prompts');
-const { callModel, validateProvider } = require('./providers');
+const { callModel, validateProvider, validateReasoningEffort } = require('./providers');
 
 // ─── Headless engine (copy of engine.js logic for Node) ──────────────────────
 const EMPTY = -1;
@@ -40,8 +40,9 @@ const DEFAULT_PLATEAU_MODE = 'ci_overlap';
 const DEFAULT_MODE = 'self-play';
 const DEFAULT_GAME = 'arena-war';
 
-const EVAL_VERSION = 'arena-war-eval-v0.3.2';
+const EVAL_VERSION = 'arena-war-eval-v0.3.3';
 const CHANGELOG = [
+  'v0.3.3: Added --reasoning-effort <low|medium|high|xhigh> CLI flag; plumbed through providers for OpenAI reasoning models as reasoning_effort param; token floor scales with effort (32768 for high, 65536 for xhigh). Records protocol.reasoningEffort (schemaVersion 6). Score-affecting for OpenAI reasoning families.',
   'v0.3.2: Raised per-call output budget from 2048 to 8192 tokens (was truncating verbose generators); added OpenAI reasoning-model support (gpt-5/o1/o3/o4) via max_completion_tokens with a 16384 floor to cover internal reasoning. Score-affecting.',
   'v0.3.1: Per-model provider pinning via --model name@provider; models[*].provider written to output (schemaVersion 5)',
   'v0.3.0: Reproducible run seed + per-game seeds in output, bootstrap pairwise comparison, CI-overlap plateau, Bradley-Terry ratings, real head-to-head matrix, held-out reference',
@@ -694,6 +695,7 @@ async function runSingleIteration({
   plateauPatience = DEFAULT_PLATEAU_PATIENCE,
   plateauMinImprovement = DEFAULT_PLATEAU_MIN_IMPROVEMENT,
   plateauMode = DEFAULT_PLATEAU_MODE,
+  reasoningEffort,
 }) {
   const state = { ...currentState };
   const {
@@ -737,8 +739,8 @@ async function runSingleIteration({
     });
   }
 
-  console.log(`Calling ${provider}/${model}...`);
-  const { text: rawCode } = await callModel(provider, model, prompt, 8192);
+  console.log(`Calling ${provider}/${model}${reasoningEffort ? ` [reasoning=${reasoningEffort}]` : ''}...`);
+  const { text: rawCode } = await callModel(provider, model, prompt, 8192, { reasoningEffort });
 
   let modelFn;
   try {
@@ -1000,6 +1002,7 @@ async function runModelEval({
   opponentAlgos = [],
   game = DEFAULT_GAME,
   runSeed,
+  reasoningEffort,
 }) {
   const baselineOpponents = baselinePool.slice(0, nPlayers - 1);
   let state = createInitialState(baselineOpponents);
@@ -1027,6 +1030,7 @@ async function runModelEval({
       plateauPatience,
       plateauMinImprovement,
       plateauMode,
+      reasoningEffort,
     });
 
     state = updatedState;
@@ -1069,7 +1073,10 @@ async function runEval(opts = {}) {
     mode = DEFAULT_MODE,
     game = DEFAULT_GAME,
     seed,
+    reasoningEffort,
   } = opts;
+
+  validateReasoningEffort(reasoningEffort);
 
   // Top-level run seed: CLI `--seed` pins it for bit-for-bit reproducibility;
   // otherwise derive a time-based default that we record in the output so any
@@ -1115,7 +1122,7 @@ async function runEval(opts = {}) {
 
   const benchmarkResults = {
     generatedAt: new Date().toISOString(),
-    schemaVersion: 5,
+    schemaVersion: 6,
     evalVersion: EVAL_VERSION,
     changelog: CHANGELOG,
     protocol: {
@@ -1131,6 +1138,7 @@ async function runEval(opts = {}) {
       plateauPatience,
       plateauMinImprovement,
       plateauMode,
+      reasoningEffort: reasoningEffort ?? null,
       rewardSignals: [
         'avg_territory_pct',
         'leaderboard_position',
@@ -1186,6 +1194,7 @@ async function runEval(opts = {}) {
           plateauMinImprovement,
           plateauMode,
           game,
+          reasoningEffort: (entry.provider === 'openai') ? reasoningEffort : undefined,
         });
 
         states[entry.name] = updatedState;
@@ -1222,6 +1231,7 @@ async function runEval(opts = {}) {
         modelIndex: modelIdx,
         game,
         runSeed,
+        reasoningEffort: (entry.provider === 'openai') ? reasoningEffort : undefined,
       });
       benchmarkResults.models[entry.name].provider = entry.provider;
     }
@@ -1354,6 +1364,10 @@ function parseCliArgs(argv) {
         }
         i++;
         break;
+      case '--reasoning-effort':
+        values.reasoningEffort = readValue(i, arg);
+        i++;
+        break;
       default:
         throw new Error(`Unknown argument: ${arg}`);
     }
@@ -1390,6 +1404,10 @@ Options:
   --plateau-mode <ci_overlap|fixed_threshold>  Plateau rule (default: ${DEFAULT_PLATEAU_MODE}). ci_overlap requires an iteration's CI95 low to clear best-so-far's CI95 high.
   --output <path>                  Output JSON path (default: eval-results.json)
   --seed <n>                       Top-level run seed for bit-for-bit reproducibility (default: time-based)
+  --reasoning-effort <level>       OpenAI reasoning-family only: low|medium|high|xhigh.
+                                     Sets the reasoning_effort param and bumps the output
+                                     token floor accordingly. Ignored for anthropic and for
+                                     non-reasoning OpenAI models.
   --help                           Show this help
 `.trim());
 }
@@ -1423,6 +1441,7 @@ if (require.main === module) {
     game: cliOptions.game,
     seed: cliOptions.seed,
     plateauMode: cliOptions.plateauMode,
+    reasoningEffort: cliOptions.reasoningEffort,
   }).catch(error => {
     console.error(error);
     process.exit(1);

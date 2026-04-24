@@ -5,12 +5,22 @@
  * Supports Anthropic and OpenAI with a single callModel function.
  *
  * Interface:
- *   callModel(provider, model, prompt, maxTokens) -> { text, usage, latency }
+ *   callModel(provider, model, prompt, maxTokens, options?) -> { text, usage, latency }
+ *
+ * Options:
+ *   reasoningEffort: 'low' | 'medium' | 'high' | 'xhigh'
+ *     Passed as reasoning.effort on OpenAI reasoning-family models
+ *     (gpt-5, o1, o3, o4). Ignored for non-reasoning models and for
+ *     Anthropic. Higher effort lets the model burn more tokens on
+ *     internal reasoning before emitting visible output.
  *
  * Usage:
  *   const { callModel } = require('./providers');
  *   const result = await callModel('anthropic', 'claude-sonnet-4-20250514', prompt, 2048);
+ *   const result = await callModel('openai', 'gpt-5.4-2026-03-05', prompt, 8192, { reasoningEffort: 'high' });
  */
+
+const REASONING_EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh'];
 
 const Anthropic = require('@anthropic-ai/sdk');
 const OpenAI = require('openai');
@@ -61,20 +71,62 @@ function useCompletionTokensParam(model) {
   return /^(gpt-5|o1|o3|o4)/i.test(model);
 }
 
-async function callOpenAI(client, model, prompt, maxTokens) {
+// Token floor for reasoning models by effort level. Higher effort burns more
+// tokens on internal reasoning before emitting visible output, so the budget
+// has to cover both reasoning + code. Empirical floors chosen to avoid
+// truncation in the smoke tests.
+function reasoningTokenFloor(effort) {
+  switch (effort) {
+    case 'high': return 32768;
+    case 'xhigh': return 65536;
+    case 'medium':
+    case 'low':
+    default: return 16384;
+  }
+}
+
+// Per-request timeout in ms for reasoning models by effort level. The
+// OpenAI SDK's default (10 min) kills long reasoning runs on iterative
+// prompts with lots of context — empirically gpt-5.4 at effort=high on
+// a full iterative prompt can take 10-20 minutes. Defaults below are
+// chosen to cover observed max latency with ~2x headroom.
+function reasoningRequestTimeoutMs(effort) {
+  switch (effort) {
+    case 'xhigh': return 60 * 60 * 1000;
+    case 'high': return 30 * 60 * 1000;
+    case 'medium': return 20 * 60 * 1000;
+    case 'low':
+    default: return 15 * 60 * 1000;
+  }
+}
+
+async function callOpenAI(client, model, prompt, maxTokens, options = {}) {
   const start = Date.now();
+  const isReasoning = useCompletionTokensParam(model);
+  const reasoningEffort = options.reasoningEffort;
   // Reasoning families burn tokens on internal reasoning before the visible
   // response, so the caller's budget has to cover both. Floor reasoning models
-  // at 16384 to leave room for a substantial code body after reasoning.
-  const effectiveMax = useCompletionTokensParam(model) ? Math.max(maxTokens, 16384) : maxTokens;
-  const tokenParam = useCompletionTokensParam(model)
+  // at a level sized to the requested effort.
+  const floor = isReasoning ? reasoningTokenFloor(reasoningEffort) : 0;
+  const effectiveMax = isReasoning ? Math.max(maxTokens, floor) : maxTokens;
+  const tokenParam = isReasoning
     ? { max_completion_tokens: effectiveMax }
     : { max_tokens: effectiveMax };
+  const reasoningParam = (isReasoning && reasoningEffort)
+    ? { reasoning_effort: reasoningEffort }
+    : {};
+  // Per-request timeout: reasoning models on iterative prompts routinely
+  // exceed the SDK default (10 min). Extend the timeout for reasoning calls
+  // proportional to effort; leave non-reasoning calls at the SDK default.
+  const requestOpts = isReasoning
+    ? { timeout: reasoningRequestTimeoutMs(reasoningEffort) }
+    : undefined;
   const response = await client.chat.completions.create({
     model,
     ...tokenParam,
+    ...reasoningParam,
     messages: [{ role: 'user', content: prompt }],
-  });
+  }, requestOpts);
   const latency = Date.now() - start;
 
   const text = response.choices?.[0]?.message?.content ?? '';
@@ -87,16 +139,25 @@ async function callOpenAI(client, model, prompt, maxTokens) {
   return { text, usage, latency };
 }
 
-async function callModel(provider, model, prompt, maxTokens) {
+async function callModel(provider, model, prompt, maxTokens, options = {}) {
   const client = getProviderClient(provider);
 
   switch (provider) {
     case 'anthropic':
       return callAnthropic(client, model, prompt, maxTokens);
     case 'openai':
-      return callOpenAI(client, model, prompt, maxTokens);
+      return callOpenAI(client, model, prompt, maxTokens, options);
     default:
       throw new Error(`Unknown provider: ${provider}`);
+  }
+}
+
+function validateReasoningEffort(effort) {
+  if (effort == null) return;
+  if (!REASONING_EFFORT_LEVELS.includes(effort)) {
+    throw new Error(
+      `Unknown reasoning effort: ${effort}. Supported: ${REASONING_EFFORT_LEVELS.join(', ')}`
+    );
   }
 }
 
@@ -110,5 +171,7 @@ module.exports = {
   callModel,
   getProviderClient,
   validateProvider,
+  validateReasoningEffort,
   PROVIDERS,
+  REASONING_EFFORT_LEVELS,
 };
