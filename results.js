@@ -409,6 +409,7 @@
       metaItem('Eval schema version', state.results.schemaVersion ?? 'n/a'),
       metaItem('Grid size', protocol.gridSize ?? 'n/a'),
       metaItem('Player count', protocol.nPlayers ?? 'n/a'),
+      metaItem('Mode', protocol.mode ?? 'n/a'),
       metaItem('Games per iteration', protocol.gamesPerIter ?? 'n/a'),
       metaItem('Target iterations', protocol.maxIterations ?? 'n/a'),
       metaItem('Plateau policy', protocol.plateauPatience == null ? 'n/a' : `${protocol.plateauPatience} rounds, ${protocol.plateauMinImprovement ?? 'n/a'}% min gain`),
