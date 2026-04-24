@@ -82,7 +82,10 @@
   - Uses seeded randomness (`seededRandom`) to vary starting positions per game while keeping game rules and algorithm behavior deterministic.
   - Computes per-iteration statistics (mean, std, min/max, 95% CI) stored in each iteration result.
   - Emits a per-iteration `failureFlags` array with annotated failure codes (see Failure Taxonomy section below).
-  - Writes top-level `evalVersion`, `changelog`, and `schemaVersion` on every `eval-results.json`; `schemaVersion` is currently `3`.
+  - Writes top-level `evalVersion`, `changelog`, and `schemaVersion` on every `eval-results.json`; `schemaVersion` is currently `5`.
+  - Supports per-model provider pinning via `--model name@provider` syntax (e.g. `--model gpt-4o@openai --model claude-sonnet-4-5-20250929@anthropic`) for mixed-provider runs in a single invocation; models without `@` fall back to `--provider`. Per-model provider is written to `models[<name>].provider` in the output.
+  - Supports reproducible runs via `--seed <n>` top-level run seed; per-game seeds are deterministically derived from `(runSeed, modelIndex, iter, gameIndex)` and dumped into `protocol.perGameSeeds` for bit-for-bit replay.
+  - Produces Track B rigor fields: bootstrap pairwise CIs, Bradley-Terry opponent-aware ratings, real best-vs-best head-to-head matrix, CI-overlap plateau detection, and held-out reference algorithm benchmark.
   - Current output schema is comparison-oriented and includes protocol metadata, model summaries, per-iteration details, prompt feedback, representative board snapshots, and failure annotations.
 - `providers.js`
   - Unified provider interface supporting Anthropic and OpenAI.
@@ -193,7 +196,7 @@
 - The dashboard consumes these flags through `renderFailureTaxonomy()` in `results.js`. Flag labels, colors, and blurbs live in `FAILURE_FLAG_META`; adjust them there when adding new flags.
 
 ## Benchmark Versioning (Phase 7)
-- `EVAL_VERSION` (currently `arena-war-eval-v0.2.0`) and `CHANGELOG` live at the top of `eval-runner.js` and are written into both the top-level result object and `protocol.evalVersion`.
+- `EVAL_VERSION` (currently `arena-war-eval-v0.3.1`) and `CHANGELOG` live at the top of `eval-runner.js` and are written into both the top-level result object and `protocol.evalVersion`.
 - When introducing any eval-behavior change that affects scores, bump `EVAL_VERSION` and prepend a one-line entry to `CHANGELOG`.
 - When changing the shape of `eval-results.json`, bump `schemaVersion`. The frontend reads both `state.results.evalVersion` and `state.results.schemaVersion`.
 
