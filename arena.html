@@ -1,90 +1,497 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Arena War — LLM Eval</title>
+  <title>Arena War — Sandbox</title>
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: system-ui, sans-serif; background: #f5f4f0; color: #1a1a1a; }
-    #root { padding: 1rem; max-width: 960px; margin: 0 auto; }
-    h1 { font-size: 18px; font-weight: 500; margin-bottom: 0.35rem; }
-    .page-links { display: flex; gap: 10px; margin-bottom: 1rem; }
-    .page-links a { font-size: 13px; color: #666; text-decoration: none; }
-    .page-links a:hover { text-decoration: underline; }
-
-    .top-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 1rem; flex-wrap: wrap; }
-    .top-bar label { font-size: 13px; color: #666; }
-    .top-bar select, .top-bar input[type=range] { font-size: 13px; }
-    .btn {
-      font-size: 13px; padding: 6px 14px; cursor: pointer;
-      border-radius: 8px; border: 0.5px solid #ccc;
-      background: #fff; color: #1a1a1a;
+    /* ─── CSS Variables (mirrors results.html so both pages share look) ─── */
+    :root {
+      --bg-page: #0f0f0f;
+      --bg-panel: #161616;
+      --bg-panel-hover: #1c1c1c;
+      --bg-elevated: #1e1e1e;
+      --bg-chip: #252525;
+      --bg-input: #1a1a1a;
+      --bg-code: #0d0d0d;
+      --text-primary: #f0f0f0;
+      --text-secondary: #a0a0a0;
+      --text-muted: #6a6a6a;
+      --border-subtle: #2a2a2a;
+      --border-hover: #3a3a3a;
+      --accent-orange: #E87040;
+      --accent-blue: #5B9CF6;
+      --accent-green: #6BC98A;
+      --accent-purple: #C97BE8;
+      --shadow-sm: 0 1px 2px rgba(0,0,0,0.4);
+      --radius-sm: 8px;
+      --radius-md: 12px;
+      --transition-fast: 0.15s ease;
+      --transition-base: 0.25s ease;
+      --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      --font-mono: 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
     }
-    .btn:hover { background: #f0f0f0; }
-    .btn.primary { background: #1a1a1a; color: #fff; border-color: #1a1a1a; }
-    .btn.primary:hover { opacity: 0.85; }
 
-    .arena-row { display: flex; gap: 16px; align-items: flex-start; }
+    :root[data-theme="light"] {
+      --bg-page: #f5f4f0;
+      --bg-panel: #ffffff;
+      --bg-panel-hover: #fafafa;
+      --bg-elevated: #f0f0f0;
+      --bg-chip: #f0f0f0;
+      --bg-input: #ffffff;
+      --bg-code: #111111;
+      --text-primary: #1a1a1a;
+      --text-secondary: #555555;
+      --text-muted: #888888;
+      --border-subtle: #e0e0e0;
+      --border-hover: #cccccc;
+      --shadow-sm: 0 1px 2px rgba(0,0,0,0.06);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--bg-page);
+      color: var(--text-primary);
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      transition: background var(--transition-base), color var(--transition-base);
+    }
+
+    #root {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 1.5rem 1.25rem 3rem;
+    }
+
+    /* ─── Header ─── */
+    .page-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 1rem;
+      flex-wrap: wrap;
+      margin-bottom: 0.4rem;
+    }
+
+    h1 {
+      font-size: 24px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      line-height: 1.2;
+    }
+
+    .subhead {
+      color: var(--text-secondary);
+      max-width: 720px;
+      margin-bottom: 1rem;
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    .page-links {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 1.25rem;
+      flex-wrap: wrap;
+    }
+
+    .page-links a {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 13px;
+      padding: 4px 0;
+      border-bottom: 1px solid transparent;
+      transition: color var(--transition-fast), border-color var(--transition-fast);
+    }
+
+    .page-links a:hover {
+      color: var(--text-primary);
+      border-bottom-color: var(--border-hover);
+    }
+
+    .page-links a.active {
+      color: var(--text-primary);
+      border-bottom-color: var(--accent-orange);
+    }
+
+    /* ─── Theme toggle ─── */
+    .theme-toggle {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      padding: 6px 12px;
+      color: var(--text-secondary);
+      font-size: 13px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+    }
+
+    .theme-toggle:hover {
+      background: var(--bg-panel-hover);
+      border-color: var(--border-hover);
+      color: var(--text-primary);
+    }
+
+    /* ─── Top bar (run controls) ─── */
+    .top-bar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 1rem;
+      flex-wrap: wrap;
+      padding: 10px 12px;
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      background: var(--bg-panel);
+    }
+    .top-bar label {
+      font-size: 12px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .top-bar select, .top-bar input[type=range] {
+      font-size: 13px;
+      background: var(--bg-input);
+      color: var(--text-primary);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      padding: 4px 6px;
+    }
+    .top-bar .sep {
+      flex: 1;
+    }
+
+    .btn {
+      font-size: 13px;
+      padding: 6px 14px;
+      cursor: pointer;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-subtle);
+      background: var(--bg-panel);
+      color: var(--text-primary);
+      transition: background var(--transition-fast), border-color var(--transition-fast);
+    }
+    .btn:hover {
+      background: var(--bg-panel-hover);
+      border-color: var(--border-hover);
+    }
+    .btn.primary {
+      background: var(--text-primary);
+      color: var(--bg-page);
+      border-color: var(--text-primary);
+    }
+    .btn.primary:hover {
+      opacity: 0.85;
+    }
+    .btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    /* ─── Two-pane arena layout ─── */
+    .arena-layout {
+      display: grid;
+      gap: 20px;
+      grid-template-columns: 1fr;
+    }
+    @media (min-width: 1000px) {
+      .arena-layout {
+        grid-template-columns: minmax(420px, 1fr) minmax(320px, 360px);
+        align-items: start;
+      }
+    }
+
+    /* Left pane: canvas stage */
+    .stage {
+      background: var(--bg-panel);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 16px;
+    }
+    .stage-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .stage-meta .tick-label {
+      font-size: 12px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .stage-meta .tick-val {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      color: var(--text-primary);
+      font-weight: 500;
+    }
     #canvas-wrap {
-      flex-shrink: 0;
-      border: 0.5px solid #ddd;
-      border-radius: 8px;
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
       overflow: hidden;
-      background: #eee;
+      background: var(--bg-elevated);
+      display: flex;
+      justify-content: center;
+      padding: 12px;
     }
     canvas { display: block; }
 
-    .side-panel { flex: 1; min-width: 200px; display: flex; flex-direction: column; gap: 12px; }
-    .panel-card {
-      background: #fff; border: 0.5px solid #ddd;
-      border-radius: 8px; padding: 12px;
+    .winner-banner {
+      font-size: 13px;
+      font-weight: 500;
+      padding: 8px 12px;
+      border-radius: var(--radius-sm);
+      background: var(--accent-green);
+      color: #ffffff;
+      display: none;
+      margin-top: 12px;
+    }
+
+    /* Right pane: controls + stats */
+    .controls-column {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+      background: var(--bg-panel);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      overflow: hidden;
+    }
+
+    .control-panel {
+      background: var(--bg-panel);
+      padding: 14px 16px;
+    }
+    .control-panel + .control-panel {
+      border-top: 1px solid var(--border-subtle);
     }
     .panel-title {
-      font-size: 11px; font-weight: 500; color: #888;
-      text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 8px;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 10px;
     }
-    .stat-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
-    .swatch { width: 12px; height: 12px; border-radius: 2px; flex-shrink: 0; }
-    .stat-label { font-size: 13px; flex: 1; }
-    .stat-bar-wrap { width: 60px; height: 6px; background: #eee; border-radius: 3px; overflow: hidden; }
-    .stat-bar { height: 100%; border-radius: 3px; transition: width 0.15s; }
-    .stat-pct { font-size: 12px; font-weight: 500; color: #666; min-width: 32px; text-align: right; }
 
-    .history-list { max-height: 160px; overflow-y: auto; }
+    /* Algorithm picker */
+    .picker-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    #algo-picker {
+      flex: 1;
+      min-width: 180px;
+      font-size: 13px;
+      padding: 6px 8px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-subtle);
+      background: var(--bg-input);
+      color: var(--text-primary);
+    }
+    #algo-picker-status {
+      font-size: 11px;
+      color: var(--text-muted);
+      width: 100%;
+      margin-top: 4px;
+    }
+
+    /* Loaded-model banner inside picker panel (replaces old standalone card) */
+    .loaded-banner {
+      margin-top: 10px;
+      padding: 8px 10px;
+      border-radius: var(--radius-sm);
+      background: var(--bg-elevated);
+      border: 1px dashed var(--border-hover);
+      font-size: 12px;
+      color: var(--text-secondary);
+      display: none;
+      gap: 8px;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .loaded-banner.visible { display: flex; }
+    .loaded-banner .info { flex: 1; }
+    .loaded-banner .info strong { color: var(--text-primary); font-weight: 600; }
+    .loaded-banner .btn { padding: 3px 10px; font-size: 12px; }
+
+    /* Stats rows */
+    .stat-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+    .stat-row:last-child { margin-bottom: 0; }
+    .swatch {
+      width: 10px;
+      height: 10px;
+      border-radius: 2px;
+      flex-shrink: 0;
+    }
+    .stat-label {
+      font-size: 12px;
+      flex: 1;
+      color: var(--text-primary);
+    }
+    .stat-bar-wrap {
+      width: 56px;
+      height: 5px;
+      background: var(--bg-elevated);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .stat-bar {
+      height: 100%;
+      border-radius: 3px;
+      transition: width 0.15s;
+    }
+    .stat-pct {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      min-width: 32px;
+      text-align: right;
+    }
+
+    /* Game history */
+    .history-list { max-height: 140px; overflow-y: auto; }
     .hist-item {
-      font-size: 12px; color: #666; padding: 3px 0;
-      border-bottom: 0.5px solid #eee;
+      font-size: 11px;
+      color: var(--text-secondary);
+      padding: 3px 0;
+      border-bottom: 1px solid var(--border-subtle);
+      font-family: var(--font-mono);
     }
     .hist-item:last-child { border-bottom: none; }
-
-    .tick-label { font-size: 13px; color: #666; }
-    #speed-val { font-size: 13px; font-weight: 500; min-width: 28px; }
-    .winner-banner {
-      font-size: 13px; font-weight: 500;
-      padding: 6px 10px; border-radius: 8px;
-      background: #f0f0f0; border: 0.5px solid #ccc;
-      display: none;
+    .history-empty {
+      font-size: 12px;
+      color: var(--text-muted);
+      font-style: italic;
     }
 
-    /* Algorithm injection panel */
-    .algo-inject { margin-top: 1rem; }
-    .algo-inject textarea {
-      width: 100%; height: 120px; font-family: monospace;
-      font-size: 12px; padding: 8px; border: 0.5px solid #ccc;
-      border-radius: 8px; resize: vertical; background: #fafafa;
+    /* Advanced disclosure */
+    details.advanced {
+      margin-top: 1rem;
+      background: var(--bg-panel);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      overflow: hidden;
     }
-    .inject-row { display: flex; gap: 8px; margin-top: 8px; align-items: center; }
-    .inject-row select { font-size: 13px; flex: 1; }
-    #inject-status { font-size: 12px; color: #666; }
+    details.advanced > summary {
+      cursor: pointer;
+      list-style: none;
+      padding: 12px 16px;
+      font-size: 12px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      font-weight: 600;
+      user-select: none;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    details.advanced > summary::-webkit-details-marker { display: none; }
+    details.advanced > summary::before {
+      content: "▸";
+      display: inline-block;
+      transition: transform var(--transition-fast);
+      color: var(--text-muted);
+    }
+    details.advanced[open] > summary::before {
+      transform: rotate(90deg);
+    }
+    details.advanced > summary:hover { color: var(--text-primary); }
+    details.advanced[open] > summary {
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .advanced-body {
+      padding: 14px 16px;
+    }
+    .advanced-body p {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-bottom: 10px;
+    }
+    .advanced-body p code {
+      font-family: var(--font-mono);
+      background: var(--bg-elevated);
+      padding: 1px 4px;
+      border-radius: 3px;
+      font-size: 11px;
+    }
+    .advanced-body textarea {
+      width: 100%;
+      height: 140px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      padding: 10px;
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      resize: vertical;
+      background: var(--bg-code);
+      color: var(--text-primary);
+    }
+    .advanced-body textarea:focus {
+      outline: none;
+      border-color: var(--accent-orange);
+    }
+    .inject-row {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .inject-row label {
+      font-size: 12px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .inject-row select {
+      font-size: 13px;
+      flex: 1;
+      min-width: 140px;
+      background: var(--bg-input);
+      color: var(--text-primary);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      padding: 4px 6px;
+    }
+    #inject-status { font-size: 11px; color: var(--text-muted); }
   </style>
 </head>
 <body>
 <div id="root">
-  <h1>arena war — sandbox arena</h1>
+  <div class="page-header">
+    <div>
+      <h1>arena war — sandbox</h1>
+      <p class="subhead">run any baseline or model-generated algorithm live. pick an entry, click Load &amp; Reset, watch it play.</p>
+    </div>
+    <button class="theme-toggle" id="theme-toggle">
+      <span id="theme-icon">☀</span>
+      <span id="theme-label">Dark</span>
+    </button>
+  </div>
   <div class="page-links">
-    <a href="results.html">open results dashboard</a>
-    <a href="arena.html">sandbox</a>
+    <a href="results.html">results dashboard</a>
+    <a href="arena.html" class="active">sandbox</a>
   </div>
 
   <div class="top-bar">
@@ -108,71 +515,103 @@
     </select>
     <label>speed</label>
     <input type="range" id="speed" min="1" max="20" value="8" style="width:80px">
-    <span id="speed-val">8</span>
+    <span id="speed-val" style="font-family:var(--font-mono);font-size:12px;min-width:20px;">8</span>
+    <span class="sep"></span>
     <button class="btn primary" id="btn-start">Start</button>
     <button class="btn" id="btn-reset">Reset</button>
-    <span class="tick-label">tick <span id="tick-num">0</span></span>
-    <div class="winner-banner" id="winner-banner"></div>
   </div>
 
-  <div class="panel-card" id="algo-picker-panel" style="margin-bottom:1rem;">
-    <div class="panel-title">load algorithm into seat 0</div>
-    <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-      <select id="algo-picker" style="flex:1; min-width:240px; font-size:13px; padding:6px 8px; border-radius:8px; border:0.5px solid #ccc; background:#fff;">
-        <option value="">loading registry…</option>
-      </select>
-      <button class="btn primary" id="btn-load-algo">Load &amp; Reset</button>
-      <span id="algo-picker-status" style="font-size:12px; color:#666;"></span>
+  <div class="arena-layout">
+    <!-- Left pane: canvas stage -->
+    <div class="stage">
+      <div class="stage-meta">
+        <span class="tick-label">tick</span>
+        <span class="tick-val"><span id="tick-num">0</span></span>
+      </div>
+      <div id="canvas-wrap"><canvas id="arena"></canvas></div>
+      <div class="winner-banner" id="winner-banner"></div>
     </div>
-  </div>
 
-  <div class="panel-card" id="loaded-model-panel" style="display:none; margin-bottom:1rem;">
-    <div style="display:flex; justify-content:space-between; align-items:center; gap:12px;">
-      <span id="loaded-model-info" style="font-size:13px; color:#666;"></span>
-      <button class="btn" id="btn-clear-loaded">Clear</button>
-    </div>
-  </div>
-
-  <div class="arena-row">
-    <div id="canvas-wrap"><canvas id="arena"></canvas></div>
-    <div class="side-panel">
-      <div class="panel-card">
+    <!-- Right pane: controls + stats -->
+    <div class="controls-column">
+      <div class="control-panel">
+        <div class="panel-title">seat 0 algorithm</div>
+        <div class="picker-row">
+          <select id="algo-picker">
+            <option value="">loading registry…</option>
+          </select>
+          <button class="btn primary" id="btn-load-algo">Load &amp; Reset</button>
+        </div>
+        <span id="algo-picker-status"></span>
+        <div class="loaded-banner" id="loaded-model-panel">
+          <span class="info" id="loaded-model-info"></span>
+          <button class="btn" id="btn-clear-loaded">Clear</button>
+        </div>
+      </div>
+      <div class="control-panel">
         <div class="panel-title">territory</div>
         <div id="stats-body"></div>
       </div>
-      <div class="panel-card">
-        <div class="panel-title">algorithms</div>
+      <div class="control-panel">
+        <div class="panel-title">players</div>
         <div id="algo-list"></div>
       </div>
-      <div class="panel-card">
+      <div class="control-panel">
         <div class="panel-title">game history</div>
-        <div class="history-list" id="history-list"></div>
+        <div class="history-list" id="history-list">
+          <div class="history-empty">no games played yet</div>
+        </div>
       </div>
     </div>
   </div>
 
-  <!-- Algorithm injection panel — this is where model-generated code gets dropped in -->
-  <div class="panel-card algo-inject">
-    <div class="panel-title">inject model algorithm</div>
-    <p style="font-size:12px;color:#888;margin-bottom:8px;">
-      Paste a model-generated algorithm here. Function signature: <code>function(id, grid, size) → [[row,col], ...]</code>
-    </p>
-    <textarea id="algo-code" placeholder="// paste algorithm here
-function myAlgo(id, grid, size) {
+  <!-- Manual-paste flow, hidden behind disclosure so fresh users don't see
+       a placeholder code block competing with the picker above. -->
+  <details class="advanced" id="advanced-inject">
+    <summary>Advanced: paste a custom algorithm</summary>
+    <div class="advanced-body">
+      <p>Paste a self-contained algorithm. Function signature: <code>function(id, grid, size) → [[row,col], ...]</code>. Markdown code fences are stripped automatically.</p>
+      <textarea id="algo-code" placeholder="function myAlgo(id, grid, size) {
   const EMPTY = -1;
   const frontier = [];
   // ... your logic
   return frontier; // array of [row, col] to claim
 }"></textarea>
-    <div class="inject-row">
-      <label style="font-size:13px;color:#666">replace player</label>
-      <select id="inject-slot"></select>
-      <button class="btn" id="btn-inject">Inject &amp; Reset</button>
-      <span id="inject-status"></span>
+      <div class="inject-row">
+        <label>replace seat</label>
+        <select id="inject-slot"></select>
+        <button class="btn" id="btn-inject">Inject &amp; Reset</button>
+        <span id="inject-status"></span>
+      </div>
     </div>
-  </div>
+  </details>
 </div>
 
+<script>
+  // ─── Theme toggle (mirrors results.html so both pages feel the same) ───
+  (function () {
+    const saved = localStorage.getItem('arena-war-theme');
+    const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const initial = saved || (prefersDark ? 'dark' : 'light');
+    applyTheme(initial);
+    document.addEventListener('DOMContentLoaded', function () {
+      const btn = document.getElementById('theme-toggle');
+      if (btn) btn.addEventListener('click', function () {
+        const current = document.documentElement.getAttribute('data-theme') || 'light';
+        const next = current === 'dark' ? 'light' : 'dark';
+        applyTheme(next);
+        localStorage.setItem('arena-war-theme', next);
+      });
+    });
+    function applyTheme(theme) {
+      document.documentElement.setAttribute('data-theme', theme);
+      const icon = document.getElementById('theme-icon');
+      const label = document.getElementById('theme-label');
+      if (icon) icon.textContent = theme === 'dark' ? '☀' : '☾';
+      if (label) label.textContent = theme === 'dark' ? 'Light' : 'Dark';
+    }
+  })();
+</script>
 <script src="algorithms.js"></script>
 <script src="registry.js"></script>
 <script src="engine.js"></script>

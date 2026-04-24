@@ -110,7 +110,8 @@
 - `arena.html`
   - Interactive sandbox and future replay surface.
   - Not the main benchmark surface.
-  - Hosts a new "Load algorithm into seat 0" combobox (Phase 9A) populated from `ArenaRegistry` — every baseline plus every model × iteration in the loaded eval output. The URL-params auto-load path (`?loadModel=...&loadIter=...`) now also routes through the registry.
+  - Hosts a "Load algorithm into seat 0" combobox (Phase 9A) populated from `ArenaRegistry` — every baseline plus every model × iteration in the loaded eval output. The URL-params auto-load path (`?loadModel=...&loadIter=...`) also routes through the registry.
+  - Phase 9B redesign: shares the same CSS custom-property design tokens as `results.html` (via a duplicated `<style>` block; Phase 9D will extract to a shared `styles.css`); includes a light/dark theme toggle with `localStorage`-backed preference. Layout is a two-pane grid at ≥1000px (canvas stage left, controls column right); canvas is the left pane, the right pane stacks `seat 0 algorithm` picker → `territory` → `players` → `game history`. The manual paste flow lives inside a collapsed `<details class="advanced">` disclosure at the bottom so the placeholder textarea does not sit under the canvas on first load.
 - `engine.js`
   - Browser game engine.
   - Still duplicates logic that also exists in `eval-runner.js`.
@@ -146,11 +147,11 @@
   - representative snapshot vs full run evidence
 - The header carries a `version-badge` pill showing `evalVersion` with a hover tooltip surfacing the full `changelog`; `evalVersion` also shows in the Shared Protocol strip.
 - The Failure Taxonomy section renders per-model bar rows for each annotated flag and writes a one-sentence natural-language summary per model. It falls back to an "older eval version" message when the loaded `eval-results.json` predates Phase 7.
-- The arena (`arena.html`) now surfaces real model-generated algorithms via the Phase 9A picker, not just hardcoded baselines.
+- The arena (`arena.html`) surfaces real model-generated algorithms via the Phase 9A picker, not just hardcoded baselines.
+- The arena received its Phase 9B visual redesign: two-pane canvas/controls layout, shared tokens + theme toggle matching `results.html`, and the manual-paste flow moved behind a `<details>` disclosure so no placeholder code is visible on first load.
 - The frontend is still limited in a few areas:
-  - layout refinements (arena's manual-paste panel still sits below the canvas creating visual clutter — slated for Phase 9B)
   - dashboard hero (learning curve should be the first panel rather than buried mid-page — slated for Phase 9C)
-  - shared design tokens (arena and dashboard still duplicate CSS — slated for Phase 9D)
+  - shared design tokens (arena and dashboard still duplicate the token block inline — extraction into `styles.css` is slated for Phase 9D)
 
 ## Current State Of The Runner
 - Function extraction was fixed to support model-generated code that contains JavaScript template literals.

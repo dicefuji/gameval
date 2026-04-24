@@ -30,6 +30,10 @@
   let msPerTick = 120;
   let history = [];
   let customAlgos = [...ALGOS]; // mutable copy — models inject here
+  // Snapshot of the original human-readable baseline names so `Clear` can
+  // restore labels after a model override (e.g. ALGO_NAMES[0] = 'gpt-4.1-mini · iter 1').
+  // Do NOT use ALGOS[i].name — that returns camelCase JS identifiers like 'greedyBFS'.
+  const ORIGINAL_ALGO_NAMES = [...ALGO_NAMES];
 
   // ─── DOM refs ──────────────────────────────────────────────────────────────
   const canvas    = document.getElementById('arena');
@@ -124,6 +128,9 @@
   // ─── Game history ──────────────────────────────────────────────────────────
   function logHistory(result) {
     const { scores, totalCells, tick } = result;
+    // Clear the empty-state placeholder on first game.
+    const emptyState = histList.querySelector('.history-empty');
+    if (emptyState) emptyState.remove();
     const winnerIdx = scores.indexOf(Math.max(...scores));
     const entry = document.createElement('div');
     entry.className = 'hist-item';
@@ -234,8 +241,12 @@
 
   document.getElementById('btn-clear-loaded').addEventListener('click', () => {
     customAlgos = [...ALGOS];
-    document.getElementById('loaded-model-panel').style.display = 'none';
-    injectStatus.textContent = 'cleared loaded model';
+    // Restore the original human-readable baseline names in case a model
+    // override replaced one (e.g. seat 0 got renamed to 'gpt-4.1-mini · iter 1').
+    for (let i = 0; i < ALGO_NAMES.length; i++) ALGO_NAMES[i] = ORIGINAL_ALGO_NAMES[i];
+    renderLoadedModelPanel(null);
+    if (algoPicker) algoPicker.value = '';
+    if (algoPickerStatus) algoPickerStatus.textContent = 'cleared loaded algorithm';
     stopGame();
     init();
   });
@@ -262,19 +273,19 @@
     const info = document.getElementById('loaded-model-info');
     if (!panel || !info) return;
     if (!entry) {
-      panel.style.display = 'none';
-      info.textContent = '';
+      panel.classList.remove('visible');
+      info.innerHTML = '';
       return;
     }
     let text;
     if (entry.kind === 'model') {
-      const pct = Number.isFinite(entry.meanPct) ? ` — ${entry.meanPct.toFixed(0)}% territory` : '';
-      text = `Loaded model algorithm: ${entry.model} iteration ${entry.iter}${pct}`;
+      const pct = Number.isFinite(entry.meanPct) ? ` — <strong>${entry.meanPct.toFixed(0)}% territory</strong>` : '';
+      text = `<strong>${entry.model}</strong> · iter ${entry.iter}${pct}`;
     } else {
-      text = `Loaded baseline: ${entry.displayName}`;
+      text = `baseline: <strong>${entry.displayName}</strong>`;
     }
-    info.textContent = extra ? `${text} (${extra})` : text;
-    panel.style.display = 'block';
+    info.innerHTML = extra ? `${text} <span style="color:var(--text-muted)">(${extra})</span>` : text;
+    panel.classList.add('visible');
   }
 
   function populateAlgoPicker() {
@@ -368,7 +379,7 @@
       }
       loadEntryIntoSeat0(entry);
       renderLoadedModelPanel(entry, 'auto-loaded from URL');
-      if (injectStatus) injectStatus.textContent = `auto-loaded ${entry.id}`;
+      if (algoPickerStatus) algoPickerStatus.textContent = `auto-loaded ${entry.id}`;
       if (algoPicker) algoPicker.value = entry.id;
 
       // Clear URL params so refresh doesn't re-fetch.
@@ -379,9 +390,9 @@
     } catch (err) {
       const panel = document.getElementById('loaded-model-panel');
       const info = document.getElementById('loaded-model-info');
-      if (panel) panel.style.display = 'block';
+      if (panel) panel.classList.add('visible');
       if (info) info.textContent = `Warning: ${err.message}`;
-      if (injectStatus) injectStatus.textContent = `auto-load failed: ${err.message}`;
+      if (algoPickerStatus) algoPickerStatus.textContent = `auto-load failed: ${err.message}`;
     }
   }
 
