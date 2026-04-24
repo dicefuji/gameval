@@ -379,7 +379,7 @@
       }
       loadEntryIntoSeat0(entry);
       renderLoadedModelPanel(entry, 'auto-loaded from URL');
-      if (injectStatus) injectStatus.textContent = `auto-loaded ${entry.id}`;
+      if (algoPickerStatus) algoPickerStatus.textContent = `auto-loaded ${entry.id}`;
       if (algoPicker) algoPicker.value = entry.id;
 
       // Clear URL params so refresh doesn't re-fetch.
