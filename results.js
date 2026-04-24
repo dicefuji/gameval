@@ -687,16 +687,25 @@
       ? (deltas.slice().sort((a, b) => a - b)[Math.floor(deltas.length / 2)])
       : null;
 
+    const winners = entries.filter(e => e.verdict === 'model_better' && e.significant).length;
+    const tied = entries.filter(e => !e.significant).length;
+    const referenceLabel = rb.referenceName || 'held-out';
+
     let summary;
     if (losers.length === entries.length && entries.length > 1) {
       summary = `All ${entries.length} models lose to the held-out reference — median Δ = ${formatPercentDelta(medianDelta)}, CI excludes zero for every model.`;
     } else if (losers.length) {
       summary = `${losers.length} of ${entries.length} model${entries.length === 1 ? '' : 's'} significantly lose to the reference (CI excludes zero). Median Δ across all models: ${formatPercentDelta(medianDelta)}.`;
+    } else if (winners === entries.length && entries.length > 1) {
+      summary = `All ${entries.length} models significantly beat the reference — median Δ = ${formatPercentDelta(medianDelta)}, CI excludes zero for every model. Reference: ${referenceLabel}.`;
+    } else if (winners && tied) {
+      summary = `${winners} model${winners === 1 ? '' : 's'} significantly beat the reference (CI excludes zero); ${tied} not distinguishable (CI overlaps zero). Reference: ${referenceLabel}.`;
+    } else if (winners) {
+      summary = `${winners} of ${entries.length} model${entries.length === 1 ? '' : 's'} significantly beat the reference (CI excludes zero). Reference: ${referenceLabel}.`;
     } else {
-      const tied = entries.filter(e => !e.significant).length;
       // `referenceSummary.textContent = summary` escapes automatically; escapeHtml
       // here would cause literal `&amp;` / `&lt;` / `&gt;` to render on screen.
-      summary = `${tied} model${tied === 1 ? '' : 's'} not distinguishable from the reference (CI overlaps zero). Reference: ${rb.referenceName || 'held-out'}.`;
+      summary = `${tied} model${tied === 1 ? '' : 's'} not distinguishable from the reference (CI overlaps zero). Reference: ${referenceLabel}.`;
     }
     referenceSummary.textContent = summary;
 
