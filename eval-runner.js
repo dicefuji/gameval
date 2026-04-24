@@ -737,7 +737,7 @@ async function runSingleIteration({
   }
 
   console.log(`Calling ${provider}/${model}...`);
-  const { text: rawCode } = await callModel(provider, model, prompt, 2048);
+  const { text: rawCode } = await callModel(provider, model, prompt, 8192);
 
   let modelFn;
   try {
