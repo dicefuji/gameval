@@ -30,6 +30,10 @@
   let msPerTick = 120;
   let history = [];
   let customAlgos = [...ALGOS]; // mutable copy — models inject here
+  // Snapshot of the original human-readable baseline names so `Clear` can
+  // restore labels after a model override (e.g. ALGO_NAMES[0] = 'gpt-4.1-mini · iter 1').
+  // Do NOT use ALGOS[i].name — that returns camelCase JS identifiers like 'greedyBFS'.
+  const ORIGINAL_ALGO_NAMES = [...ALGO_NAMES];
 
   // ─── DOM refs ──────────────────────────────────────────────────────────────
   const canvas    = document.getElementById('arena');
@@ -237,8 +241,9 @@
 
   document.getElementById('btn-clear-loaded').addEventListener('click', () => {
     customAlgos = [...ALGOS];
-    // Restore default baseline names in case a model override was loaded.
-    for (let i = 0; i < ALGO_NAMES.length; i++) ALGO_NAMES[i] = ALGOS[i].name || ALGO_NAMES[i];
+    // Restore the original human-readable baseline names in case a model
+    // override replaced one (e.g. seat 0 got renamed to 'gpt-4.1-mini · iter 1').
+    for (let i = 0; i < ALGO_NAMES.length; i++) ALGO_NAMES[i] = ORIGINAL_ALGO_NAMES[i];
     renderLoadedModelPanel(null);
     if (algoPicker) algoPicker.value = '';
     if (algoPickerStatus) algoPickerStatus.textContent = 'cleared loaded algorithm';
