@@ -4,68 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Arena War — Sandbox</title>
+  <link rel="stylesheet" href="styles.css" />
   <style>
-    /* ─── CSS Variables (mirrors results.html so both pages share look) ─── */
-    :root {
-      --bg-page: #0f0f0f;
-      --bg-panel: #161616;
-      --bg-panel-hover: #1c1c1c;
-      --bg-elevated: #1e1e1e;
-      --bg-chip: #252525;
-      --bg-input: #1a1a1a;
-      --bg-code: #0d0d0d;
-      --text-primary: #f0f0f0;
-      --text-secondary: #a0a0a0;
-      --text-muted: #6a6a6a;
-      --border-subtle: #2a2a2a;
-      --border-hover: #3a3a3a;
-      --accent-orange: #E87040;
-      --accent-blue: #5B9CF6;
-      --accent-green: #6BC98A;
-      --accent-purple: #C97BE8;
-      --shadow-sm: 0 1px 2px rgba(0,0,0,0.4);
-      --radius-sm: 8px;
-      --radius-md: 12px;
-      --transition-fast: 0.15s ease;
-      --transition-base: 0.25s ease;
-      --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-      --font-mono: 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
-    }
-
-    :root[data-theme="light"] {
-      --bg-page: #f5f4f0;
-      --bg-panel: #ffffff;
-      --bg-panel-hover: #fafafa;
-      --bg-elevated: #f0f0f0;
-      --bg-chip: #f0f0f0;
-      --bg-input: #ffffff;
-      --bg-code: #111111;
-      --text-primary: #1a1a1a;
-      --text-secondary: #555555;
-      --text-muted: #888888;
-      --border-subtle: #e0e0e0;
-      --border-hover: #cccccc;
-      --shadow-sm: 0 1px 2px rgba(0,0,0,0.06);
-    }
-
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-
-    html { scroll-behavior: smooth; }
-
-    body {
-      font-family: var(--font-sans);
-      background: var(--bg-page);
-      color: var(--text-primary);
-      line-height: 1.5;
-      -webkit-font-smoothing: antialiased;
-      transition: background var(--transition-base), color var(--transition-base);
-    }
-
-    #root {
-      max-width: 1200px;
-      margin: 0 auto;
-      padding: 1.5rem 1.25rem 3rem;
-    }
+    /* Page-specific styles; shared tokens/resets/chrome live in styles.css */
 
     /* ─── Header ─── */
     .page-header {
@@ -90,53 +31,6 @@
       margin-bottom: 1rem;
       font-size: 13px;
       line-height: 1.55;
-    }
-
-    .page-links {
-      display: flex;
-      gap: 12px;
-      margin-bottom: 1.25rem;
-      flex-wrap: wrap;
-    }
-
-    .page-links a {
-      color: var(--text-muted);
-      text-decoration: none;
-      font-size: 13px;
-      padding: 4px 0;
-      border-bottom: 1px solid transparent;
-      transition: color var(--transition-fast), border-color var(--transition-fast);
-    }
-
-    .page-links a:hover {
-      color: var(--text-primary);
-      border-bottom-color: var(--border-hover);
-    }
-
-    .page-links a.active {
-      color: var(--text-primary);
-      border-bottom-color: var(--accent-orange);
-    }
-
-    /* ─── Theme toggle ─── */
-    .theme-toggle {
-      background: var(--bg-elevated);
-      border: 1px solid var(--border-subtle);
-      border-radius: var(--radius-sm);
-      padding: 6px 12px;
-      color: var(--text-secondary);
-      font-size: 13px;
-      cursor: pointer;
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
-    }
-
-    .theme-toggle:hover {
-      background: var(--bg-panel-hover);
-      border-color: var(--border-hover);
-      color: var(--text-primary);
     }
 
     /* ─── Top bar (run controls) ─── */
@@ -276,14 +170,10 @@
     .control-panel + .control-panel {
       border-top: 1px solid var(--border-subtle);
     }
-    .panel-title {
-      font-size: 11px;
-      font-weight: 600;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      margin-bottom: 10px;
-    }
+    /* Preserve arena's original 10px panel-title spacing; styles.css sets 12px
+       for the denser results.html panels, but arena's control panels are
+       tighter and looked right at 10px before the extraction. */
+    .control-panel .panel-title { margin-bottom: 10px; }
 
     /* Algorithm picker */
     .picker-row {
