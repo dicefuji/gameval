@@ -694,7 +694,9 @@
       summary = `${losers.length} of ${entries.length} model${entries.length === 1 ? '' : 's'} significantly lose to the reference (CI excludes zero). Median Δ across all models: ${formatPercentDelta(medianDelta)}.`;
     } else {
       const tied = entries.filter(e => !e.significant).length;
-      summary = `${tied} model${tied === 1 ? '' : 's'} not distinguishable from the reference (CI overlaps zero). Reference: ${escapeHtml(rb.referenceName || 'held-out')}.`;
+      // `referenceSummary.textContent = summary` escapes automatically; escapeHtml
+      // here would cause literal `&amp;` / `&lt;` / `&gt;` to render on screen.
+      summary = `${tied} model${tied === 1 ? '' : 's'} not distinguishable from the reference (CI overlaps zero). Reference: ${rb.referenceName || 'held-out'}.`;
     }
     referenceSummary.textContent = summary;
 
@@ -1240,7 +1242,12 @@
     miniArenaToggle.addEventListener('click', () => {
       miniArena.paused = !miniArena.paused;
       miniArenaToggle.textContent = miniArena.paused ? 'Play' : 'Pause';
-      if (!miniArena.paused) scheduleMiniTick();
+      if (!miniArena.paused) {
+        // Clear any pending timeout before scheduling a fresh tick so rapid
+        // pause/unpause cycles cannot fork the loop into parallel chains.
+        stopMiniArena();
+        scheduleMiniTick();
+      }
     });
   }
 
