@@ -68,7 +68,14 @@
 
     .summary-grid { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
     .verdict-grid { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+    /* Two-column inspect layout. `min-width: 0` on the inner grid items is
+       required so `minmax(0, …)` is respected — without it, long single-line
+       content (e.g. `claude-sonnet-4-5-20250929` model IDs, baseline lists)
+       pushes the left track wider than its fraction, causing the right-side
+       Live Replay panel to visually overlap the Model Summary cells. */
     .detail-grid { grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.9fr); align-items: start; }
+    .detail-grid > .grid { min-width: 0; }
+    .detail-grid .panel { min-width: 0; overflow: hidden; }
 
     .panel {
       background: var(--bg-panel);
@@ -800,6 +807,51 @@
     .reference-card .ref-verdict.wins { color: var(--accent-green); }
     .reference-card .ref-verdict.tied { color: var(--text-secondary); }
 
+    /* ─── Pairwise comparison cards (mirror reference-card look) ─── */
+    .pairwise-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 12px;
+    }
+    .pairwise-card {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      padding: 14px;
+    }
+    .pairwise-card .pw-pair { font-weight: 600; font-size: 13px; margin-bottom: 4px; }
+    .pairwise-card .pw-delta { font-size: 20px; font-weight: 700; margin: 8px 0 2px; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+    .pairwise-card .pw-delta.pos { color: var(--accent-green); }
+    .pairwise-card .pw-delta.neg { color: var(--accent-orange); }
+    .pairwise-card .pw-delta.zero { color: var(--text-secondary); }
+    .pairwise-card .pw-ci { font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+    .pairwise-card .pw-verdict { margin-top: 10px; font-size: 12px; font-weight: 500; }
+    .pairwise-card .pw-verdict.a-better { color: var(--accent-green); }
+    .pairwise-card .pw-verdict.b-better { color: var(--accent-orange); }
+    .pairwise-card .pw-verdict.tied { color: var(--text-secondary); }
+
+    /* ─── Head-to-head matrix cells ─── */
+    .h2h-cell {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      padding: 10px 12px;
+      font-size: 12px;
+      line-height: 1.35;
+    }
+    .h2h-cell.diag { background: var(--bg-chip); display: flex; align-items: center; justify-content: center; font-weight: 600; color: var(--text-muted); }
+    .h2h-cell.header { background: var(--bg-chip); font-weight: 600; font-size: 12px; display: flex; align-items: center; }
+    .h2h-cell.header.col { justify-content: center; }
+    .h2h-cell.header.row { justify-content: flex-start; }
+    .h2h-cell.corner { background: transparent; border-color: transparent; display: flex; align-items: center; justify-content: center; }
+    .h2h-cell .h2h-axis-legend { font-size: 11px; color: var(--text-muted); font-style: italic; }
+    .h2h-cell .h2h-axis-legend span { margin: 0 4px; }
+    .h2h-cell .h2h-score { font-weight: 700; font-size: 16px; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; margin-top: 2px; }
+    .h2h-cell .h2h-score.pos { color: var(--accent-green); }
+    .h2h-cell .h2h-score.neg { color: var(--accent-orange); }
+    .h2h-cell .h2h-score.tied { color: var(--text-secondary); }
+    .h2h-cell .h2h-meta { font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; margin-top: 3px; }
+
     /* ─── Inline mini arena (replaces static snapshot) ─── */
     .mini-arena-wrap {
       display: flex;
@@ -991,9 +1043,15 @@
           </p>
         </section>
 
+        <section class="section panel animate-in animate-in-delay-3" id="pairwise-panel" hidden>
+          <div class="panel-title">Pairwise Comparisons</div>
+          <p class="section-copy">Bootstrap comparison of each model pair's best iteration scores (4000 resamples, α = 0.05). CI excluding zero means the pair is statistically separable under this run's sample size.</p>
+          <div id="pairwise-grid" class="pairwise-grid"></div>
+        </section>
+
         <section class="section panel animate-in animate-in-delay-4">
           <div class="panel-title">Head-to-Head Matrix</div>
-          <p class="section-copy">Win-rate matrix across models when their best algorithms face each other directly. Requires at least two model runs in the same eval.</p>
+          <p class="section-copy">Row model's best algorithm vs column model's best algorithm across seed-matched games. Cell shows row wins – column wins (draws) and mean territory Δ with 95% CI.</p>
           <div id="head-to-head-matrix" class="placeholder-grid">
             <div class="placeholder-cell">Matrix will populate when multi-model data is available</div>
           </div>
