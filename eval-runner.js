@@ -40,8 +40,9 @@ const DEFAULT_PLATEAU_MODE = 'ci_overlap';
 const DEFAULT_MODE = 'self-play';
 const DEFAULT_GAME = 'arena-war';
 
-const EVAL_VERSION = 'arena-war-eval-v0.3.1';
+const EVAL_VERSION = 'arena-war-eval-v0.3.2';
 const CHANGELOG = [
+  'v0.3.2: Raised per-call output budget from 2048 to 8192 tokens (was truncating verbose generators); added OpenAI reasoning-model support (gpt-5/o1/o3/o4) via max_completion_tokens with a 16384 floor to cover internal reasoning. Score-affecting.',
   'v0.3.1: Per-model provider pinning via --model name@provider; models[*].provider written to output (schemaVersion 5)',
   'v0.3.0: Reproducible run seed + per-game seeds in output, bootstrap pairwise comparison, CI-overlap plateau, Bradley-Terry ratings, real head-to-head matrix, held-out reference',
   'v0.2.0: Added failure taxonomy, OpenAI provider support, adversarial mode, statistical rigor',
@@ -737,7 +738,7 @@ async function runSingleIteration({
   }
 
   console.log(`Calling ${provider}/${model}...`);
-  const { text: rawCode } = await callModel(provider, model, prompt, 2048);
+  const { text: rawCode } = await callModel(provider, model, prompt, 8192);
 
   let modelFn;
   try {

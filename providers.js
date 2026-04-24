@@ -55,11 +55,24 @@ async function callAnthropic(client, model, prompt, maxTokens) {
   return { text, usage, latency };
 }
 
+// OpenAI's reasoning-model families (gpt-5, o1, o3, o4) require
+// `max_completion_tokens` instead of `max_tokens`. Detect by model-id prefix.
+function useCompletionTokensParam(model) {
+  return /^(gpt-5|o1|o3|o4)/i.test(model);
+}
+
 async function callOpenAI(client, model, prompt, maxTokens) {
   const start = Date.now();
+  // Reasoning families burn tokens on internal reasoning before the visible
+  // response, so the caller's budget has to cover both. Floor reasoning models
+  // at 16384 to leave room for a substantial code body after reasoning.
+  const effectiveMax = useCompletionTokensParam(model) ? Math.max(maxTokens, 16384) : maxTokens;
+  const tokenParam = useCompletionTokensParam(model)
+    ? { max_completion_tokens: effectiveMax }
+    : { max_tokens: effectiveMax };
   const response = await client.chat.completions.create({
     model,
-    max_tokens: maxTokens,
+    ...tokenParam,
     messages: [{ role: 'user', content: prompt }],
   });
   const latency = Date.now() - start;
