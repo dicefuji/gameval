@@ -104,6 +104,15 @@ Runs the actual benchmark loop. It is responsible for:
 6. annotating each iteration with a `failureFlags` array covering syntax errors, runtime crashes, timeouts, out-of-bounds exploits, regressions, and plateau stalls
 7. writing a comparison-friendly `eval-results.json` tagged with `evalVersion`, `changelog`, and `schemaVersion` (currently `6`)
 
+Key CLI flags worth knowing:
+- `--model name[@provider]` (repeatable): models to benchmark. Append `@openai` or `@anthropic` to pin the provider for a single model.
+- `--mode self-play|adversarial`: learning mode. Adversarial exposes anonymized top-2 opponent source code from other models after round 1.
+- `--seed <n>`: top-level run seed for bit-for-bit reproducibility. Per-game seeds are derived deterministically from this.
+- `--reasoning-effort <low|medium|high|xhigh>`: sets the `reasoning_effort` parameter on OpenAI reasoning-family calls (gpt-5, o1, o3, o4). Token floor scales with effort (32k for high, 64k for xhigh). Ignored for Anthropic and for non-reasoning OpenAI models. Recorded as `protocol.reasoningEffort` in the output.
+- `--plateau-mode ci_overlap|fixed_threshold`: early-stop rule. `ci_overlap` requires an iteration's CI95 low to clear best-so-far's CI95 high (default).
+
+Run `node eval-runner.js --help` for the full flag list.
+
 ### `prompts.js`
 Defines the first-round prompt and the iterative prompt. Later prompts reuse the current leader, leaderboard, and recent game history so that models can improve based on what they learned.
 
@@ -188,6 +197,9 @@ npm run eval -- --model claude-sonnet-4-20250514 --model gpt-4o
 
 # Mixed-provider run (per-model provider via @provider)
 npm run eval -- --model claude-sonnet-4-5-20250929@anthropic --model gpt-4o@openai --model gpt-4.1-mini@openai
+
+# Frontier comparison with high reasoning effort on the OpenAI side
+npm run eval -- --model claude-opus-4-7@anthropic --model gpt-5.4-2026-03-05@openai --reasoning-effort high --seed 424242
 ```
 
 The runner writes `eval-results.json` in the repo root. Reload `results.html` after a run to inspect the output. If you haven't run the eval yet, both pages fall back to `sample-eval-results.json` so you still see a working dashboard and a populated arena picker.
