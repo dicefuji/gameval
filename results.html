@@ -68,7 +68,14 @@
 
     .summary-grid { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
     .verdict-grid { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+    /* Two-column inspect layout. `min-width: 0` on the inner grid items is
+       required so `minmax(0, …)` is respected — without it, long single-line
+       content (e.g. `claude-sonnet-4-5-20250929` model IDs, baseline lists)
+       pushes the left track wider than its fraction, causing the right-side
+       Live Replay panel to visually overlap the Model Summary cells. */
     .detail-grid { grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.9fr); align-items: start; }
+    .detail-grid > .grid { min-width: 0; }
+    .detail-grid .panel { min-width: 0; overflow: hidden; }
 
     .panel {
       background: var(--bg-panel);
