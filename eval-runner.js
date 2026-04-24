@@ -42,7 +42,7 @@ const DEFAULT_GAME = 'arena-war';
 
 const EVAL_VERSION = 'arena-war-eval-v0.3.3';
 const CHANGELOG = [
-  'v0.3.3: Added --reasoning-effort <low|medium|high|xhigh> CLI flag; plumbed through providers for OpenAI reasoning models as reasoning_effort param; token floor scales with effort (32768 for high, 65536 for xhigh). Records protocol.reasoningEffort. Score-affecting for OpenAI reasoning families.',
+  'v0.3.3: Added --reasoning-effort <low|medium|high|xhigh> CLI flag; plumbed through providers for OpenAI reasoning models as reasoning_effort param; token floor scales with effort (32768 for high, 65536 for xhigh). Records protocol.reasoningEffort (schemaVersion 6). Score-affecting for OpenAI reasoning families.',
   'v0.3.2: Raised per-call output budget from 2048 to 8192 tokens (was truncating verbose generators); added OpenAI reasoning-model support (gpt-5/o1/o3/o4) via max_completion_tokens with a 16384 floor to cover internal reasoning. Score-affecting.',
   'v0.3.1: Per-model provider pinning via --model name@provider; models[*].provider written to output (schemaVersion 5)',
   'v0.3.0: Reproducible run seed + per-game seeds in output, bootstrap pairwise comparison, CI-overlap plateau, Bradley-Terry ratings, real head-to-head matrix, held-out reference',
@@ -1122,7 +1122,7 @@ async function runEval(opts = {}) {
 
   const benchmarkResults = {
     generatedAt: new Date().toISOString(),
-    schemaVersion: 5,
+    schemaVersion: 6,
     evalVersion: EVAL_VERSION,
     changelog: CHANGELOG,
     protocol: {
