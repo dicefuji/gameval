@@ -748,6 +748,234 @@
     .animate-in-delay-4 { animation-delay: 0.2s; }
     .animate-in-delay-5 { animation-delay: 0.25s; }
 
+    /* ─── Figure captions (hero + panels) ─── */
+    .figure-caption {
+      font-size: 13px;
+      color: var(--text-secondary);
+      margin-top: 14px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border-subtle);
+      line-height: 1.55;
+      max-width: 880px;
+    }
+    .figure-caption strong { color: var(--text-primary); }
+
+    /* ─── Filter strip (leaderboard) ─── */
+    .filter-strip {
+      display: inline-flex;
+      gap: 2px;
+      padding: 3px;
+      border-radius: var(--radius-sm);
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      margin-bottom: 14px;
+    }
+    .filter-btn {
+      background: transparent;
+      border: none;
+      padding: 6px 14px;
+      font-size: 12px;
+      color: var(--text-secondary);
+      border-radius: 6px;
+      cursor: pointer;
+      font-family: inherit;
+      transition: background var(--transition-fast), color var(--transition-fast);
+    }
+    .filter-btn:hover { color: var(--text-primary); }
+    .filter-btn.active {
+      background: var(--bg-panel);
+      color: var(--text-primary);
+      box-shadow: var(--shadow-sm);
+    }
+    .filter-btn.disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    .filter-count {
+      margin-left: 10px;
+      font-size: 12px;
+      color: var(--text-muted);
+      align-self: center;
+    }
+
+    /* ─── Compact leaderboard table ─── */
+    .leaderboard-table td.rank-cell {
+      font-variant-numeric: tabular-nums;
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+    .leaderboard-table td.score-cell {
+      font-variant-numeric: tabular-nums;
+      font-weight: 600;
+      font-size: 15px;
+    }
+    .leaderboard-table td.model-cell { font-weight: 500; }
+    .leaderboard-table .tier-chip {
+      display: inline-block;
+      margin-left: 8px;
+      padding: 1px 7px;
+      border-radius: 999px;
+      background: var(--bg-chip);
+      color: var(--text-muted);
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      vertical-align: middle;
+    }
+    .leaderboard-table .expand-toggle {
+      background: transparent;
+      border: 1px solid var(--border-subtle);
+      border-radius: 4px;
+      width: 22px;
+      height: 22px;
+      padding: 0;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 11px;
+      line-height: 1;
+      transition: color var(--transition-fast), border-color var(--transition-fast);
+    }
+    .leaderboard-table .expand-toggle:hover {
+      color: var(--text-primary);
+      border-color: var(--border-hover);
+    }
+    .leaderboard-table tr.expand-row td {
+      background: var(--bg-elevated);
+      padding: 14px 18px;
+      border-top: none;
+    }
+    .leaderboard-table tr.expand-row[hidden] { display: none; }
+    .leaderboard-table .expand-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 14px;
+    }
+    .leaderboard-table .expand-grid > div strong {
+      display: block;
+      font-size: 10px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 3px;
+      font-weight: 600;
+    }
+    .leaderboard-table .expand-grid > div span {
+      font-size: 13px;
+      color: var(--text-primary);
+    }
+    .leaderboard-filter-empty {
+      padding: 24px 12px;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 13px;
+    }
+
+    /* ─── Held-out reference panel ─── */
+    .reference-summary-strong {
+      font-size: 14px;
+      color: var(--text-primary);
+      font-weight: 500;
+      line-height: 1.55;
+      margin-bottom: 12px;
+      padding: 12px 14px;
+      background: var(--bg-elevated);
+      border-left: 3px solid var(--accent-orange);
+      border-radius: var(--radius-sm);
+    }
+    .reference-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 12px;
+    }
+    .reference-card {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      padding: 14px;
+    }
+    .reference-card .ref-model {
+      font-weight: 600;
+      font-size: 13px;
+      margin-bottom: 4px;
+    }
+    .reference-card .ref-delta {
+      font-size: 20px;
+      font-weight: 700;
+      margin: 8px 0 2px;
+      letter-spacing: -0.01em;
+    }
+    .reference-card .ref-delta.neg { color: var(--accent-orange); }
+    .reference-card .ref-delta.pos { color: var(--accent-green); }
+    .reference-card .ref-ci {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-variant-numeric: tabular-nums;
+    }
+    .reference-card .ref-verdict {
+      margin-top: 10px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+    .reference-card .ref-verdict.loses { color: var(--accent-orange); }
+    .reference-card .ref-verdict.wins { color: var(--accent-green); }
+    .reference-card .ref-verdict.tied { color: var(--text-secondary); }
+
+    /* ─── Inline mini arena (replaces static snapshot) ─── */
+    .mini-arena-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .mini-arena-wrap canvas#mini-arena-canvas {
+      width: 100%;
+      max-width: 340px;
+      height: auto;
+      aspect-ratio: 1 / 1;
+      margin: 0 auto;
+    }
+    .mini-arena-controls {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .mini-arena-controls button {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-secondary);
+      padding: 5px 12px;
+      border-radius: var(--radius-sm);
+      font-size: 12px;
+      cursor: pointer;
+      font-family: inherit;
+      transition: background var(--transition-fast), color var(--transition-fast);
+    }
+    .mini-arena-controls button:hover {
+      background: var(--bg-chip);
+      color: var(--text-primary);
+    }
+    .mini-arena-controls .tick-label {
+      font-variant-numeric: tabular-nums;
+    }
+    .mini-arena-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 14px;
+      font-size: 11px;
+      color: var(--text-secondary);
+    }
+    .mini-arena-legend .swatch {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 2px;
+      margin-right: 5px;
+      vertical-align: middle;
+    }
+
     /* ─── Responsive ─── */
     @media (max-width: 900px) {
       .detail-grid { grid-template-columns: 1fr; }
@@ -792,7 +1020,74 @@
       </div>
 
       <div id="content" style="display:none">
+        <!-- HERO: Learning curve comes first, before any verdict cards. -->
         <section class="section panel animate-in">
+          <div class="panel-title">Figure 1 — Learning Curves Across Models</div>
+          <p class="section-copy">Mean territory percentage by eval iteration per model. Shaded bands are &plusmn;1 std dev across games. Where a held-out reference algorithm ran, its mean is drawn as a dashed horizontal line — models below it failed to beat a hand-written algorithm whose source they never saw.</p>
+          <div class="chart-wrap" id="chart-container" style="position:relative;">
+            <svg id="learning-curve" viewBox="0 0 900 320" preserveAspectRatio="xMidYMid meet"></svg>
+            <div id="chart-tooltip" class="chart-tooltip"></div>
+          </div>
+          <div id="chart-legend" class="chart-legend"></div>
+          <p class="figure-caption"><strong>Figure 1:</strong> Read the trajectory, not the absolute peak. A model with a steeper slope under the same protocol is the stronger learner. A flat line at a high value is still a good result — it means the model reached peak fast. The reference line is the trust anchor: it is frozen across eval versions and never exposed to the models.</p>
+        </section>
+
+        <!-- LEADERBOARD with filter strip. Compact Vending-Bench style. -->
+        <section class="section panel animate-in animate-in-delay-1">
+          <div class="panel-title">Leaderboard</div>
+          <p class="section-copy">Ordered by strongest best result. Ties fall to the earlier best iteration. Click <span aria-hidden="true">&#9656;</span> on a row for net improvement, successful iterations, and stop reason.</p>
+          <div style="display:flex; align-items:center; flex-wrap:wrap; gap:10px;">
+            <div class="filter-strip" id="leaderboard-filter" role="tablist">
+              <button class="filter-btn active" data-filter="all" type="button">All</button>
+              <button class="filter-btn" data-filter="frontier" type="button">Frontier</button>
+              <button class="filter-btn" data-filter="mid" type="button">Mid-tier</button>
+              <button class="filter-btn" data-filter="cheap" type="button">Cheap</button>
+            </div>
+            <span class="filter-count" id="filter-count"></span>
+          </div>
+          <div class="comparison-table-wrap">
+            <table class="leaderboard-table">
+              <thead>
+                <tr>
+                  <th style="width:56px">#</th>
+                  <th>Model</th>
+                  <th>Best score</th>
+                  <th>Iter</th>
+                  <th>Replay</th>
+                  <th style="width:44px" aria-label="Expand"></th>
+                </tr>
+              </thead>
+              <tbody id="comparison-table-body"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- HELD-OUT REFERENCE: promoted above summary cards. -->
+        <section class="section panel animate-in animate-in-delay-2" id="reference-panel" hidden>
+          <div class="panel-title">Held-Out Reference Benchmark</div>
+          <div id="reference-summary" class="reference-summary-strong"></div>
+          <div id="reference-grid" class="reference-grid"></div>
+          <p class="small-note">The reference algorithm's source is never included in any prompt or in <code>eval-results.json</code>. It is a frozen anchor that lets us compare across eval versions without models ever seeing it. A model "losing to the reference" with a CI that excludes zero is the most trustworthy single claim this eval produces.</p>
+        </section>
+
+        <section class="section panel animate-in animate-in-delay-2">
+          <div class="panel-title">Shared Protocol</div>
+          <p class="section-copy">Every model shown above was evaluated under the same run configuration. This strip is what makes the comparison apples-to-apples.</p>
+          <div id="protocol-grid" class="grid summary-grid"></div>
+        </section>
+
+        <section class="section panel animate-in animate-in-delay-3">
+          <div class="panel-title">Benchmark Summary</div>
+          <div id="summary-grid" class="grid summary-grid"></div>
+        </section>
+
+        <section class="section panel animate-in animate-in-delay-3">
+          <div class="panel-title">Comparison Verdict</div>
+          <p class="section-copy">A good result is primarily relative: stronger final performance and faster improvement than peers on the same run.</p>
+          <div id="verdict-grid" class="grid verdict-grid"></div>
+        </section>
+
+        <section class="section panel animate-in animate-in-delay-4">
           <div class="panel-title">How To Read This Run</div>
           <div class="read-guide">
             <div class="guide-card">
@@ -812,68 +1107,11 @@
               <p>The arena replay is a follow-on inspection tool. Use it after you understand the benchmark result, not instead of it.</p>
             </div>
           </div>
-        </section>
-
-        <section class="section panel animate-in animate-in-delay-1">
-          <div class="panel-title">What This Benchmark Measures</div>
-          <p class="methodology-note">
-            Arena War measures <strong>iterative algorithm improvement under adversarial pressure</strong>: a model must read the task, write code, learn from reward signals, and produce stronger follow-up algorithms over repeated rounds. It does <strong>not</strong> claim to measure general coding ability from one chart. Cross-model comparison is meaningful here because the protocol is shared across the run. For deeper methodology, see <a href="benchmark-methodology.md" target="_blank" rel="noopener noreferrer">benchmark-methodology.md</a>.
+          <p class="methodology-note" style="margin-top:14px">
+            Arena War measures <strong>iterative algorithm improvement under adversarial pressure</strong>: a model must read the task, write code, learn from reward signals, and produce stronger follow-up algorithms over repeated rounds. It does <strong>not</strong> claim to measure general coding ability from one chart. For deeper methodology, see <a href="benchmark-methodology.md" target="_blank" rel="noopener noreferrer">benchmark-methodology.md</a>.
           </p>
         </section>
 
-        <section class="section panel animate-in animate-in-delay-2">
-          <div class="panel-title">Benchmark Summary</div>
-          <p class="section-copy">Use this row as the top-line read: who finished strongest, how many models were compared, and how much benchmark evidence this run contains.</p>
-          <div id="summary-grid" class="grid summary-grid"></div>
-        </section>
-
-        <section class="section panel animate-in animate-in-delay-2">
-          <div class="panel-title">Comparison Verdict</div>
-          <p class="section-copy">A good result is primarily relative: stronger final performance and faster improvement than peers on the same run.</p>
-          <div id="verdict-grid" class="grid verdict-grid"></div>
-        </section>
-
-        <section class="section panel animate-in animate-in-delay-3">
-          <div class="panel-title">Shared Protocol</div>
-          <p class="section-copy">This strip explains why the comparison is apples-to-apples. Every model shown below was evaluated under this same run configuration.</p>
-          <div id="protocol-grid" class="grid summary-grid"></div>
-        </section>
-
-        <section class="section panel animate-in animate-in-delay-3">
-          <div class="panel-title">Model Comparison Table</div>
-          <p class="section-copy">Read this before drilling into individual iterations. It shows who finished best, who improved most, and how each run ended.</p>
-          <div class="comparison-table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Rank</th>
-                  <th>Model</th>
-                  <th>Best score</th>
-                  <th>Best iteration</th>
-                  <th>Latest score</th>
-                  <th>Net improvement</th>
-                  <th>Successful iterations</th>
-                  <th>Stop reason</th>
-                  <th>Replay</th>
-                </tr>
-              </thead>
-              <tbody id="comparison-table-body"></tbody>
-            </table>
-          </div>
-          <p class="small-note">Ranking is ordered by strongest best result first. Ties fall to the earlier best iteration.</p>
-        </section>
-
-        <section class="section panel animate-in animate-in-delay-4">
-          <div class="panel-title">Learning Curves</div>
-          <div class="chart-wrap" id="chart-container" style="position:relative;">
-            <svg id="learning-curve" viewBox="0 0 900 320" preserveAspectRatio="xMidYMid meet"></svg>
-            <div id="chart-tooltip" class="chart-tooltip"></div>
-          </div>
-          <div id="chart-legend" class="chart-legend"></div>
-          <p class="small-note">Each line shows mean territory percentage by eval iteration for one model. Shaded bands show &plusmn;1 std dev when available. The main read is relative trajectory: who improves fastest and who ends strongest.</p>
-        </section>
-
-        <!-- TODO: Populate with actual head-to-head matchup data when available -->
         <section class="section panel animate-in animate-in-delay-4">
           <div class="panel-title">Head-to-Head Matrix</div>
           <p class="section-copy">Win-rate matrix across models when their best algorithms face each other directly. Requires at least two model runs in the same eval.</p>
@@ -938,10 +1176,18 @@
 
           <div class="grid" style="gap:16px">
             <div class="panel">
-              <div class="panel-title">Representative Board Snapshot</div>
-              <canvas id="snapshot-canvas" width="320" height="320"></canvas>
+              <div class="panel-title">Live Replay</div>
+              <div class="mini-arena-wrap">
+                <canvas id="mini-arena-canvas" width="320" height="320"></canvas>
+                <div class="mini-arena-controls">
+                  <button id="mini-arena-toggle" type="button">Pause</button>
+                  <span class="tick-label" id="mini-arena-tick">tick 0</span>
+                  <a id="mini-arena-open" class="btn-link" href="arena.html" target="_blank" rel="noopener noreferrer" style="padding:5px 12px; font-size:12px;">Open in full arena &#8599;</a>
+                </div>
+                <div class="mini-arena-legend" id="mini-arena-legend"></div>
+              </div>
               <div id="snapshot-meta" class="meta-list" style="margin-top:12px"></div>
-              <p class="small-note">This snapshot is a representative game from the selected eval iteration, chosen to sit closest to that iteration's mean score.</p>
+              <p class="small-note">The selected iteration's algorithm sits in seat 0 (<span id="mini-arena-player-note">player 1</span>) against the shared baseline opponents. Game auto-loops; click <strong>Pause</strong> to freeze, or <strong>Open in full arena</strong> to inspect a single game end-to-end.</p>
             </div>
 
             <div class="panel">
@@ -958,6 +1204,7 @@
   </div>
 
   <script src="algorithms.js"></script>
+  <script src="engine.js"></script>
   <script src="registry.js"></script>
   <script src="results.js"></script>
 </body>

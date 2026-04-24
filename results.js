@@ -26,7 +26,11 @@
   const leaderboardSnapshot = document.getElementById('leaderboard-snapshot');
   const historySnapshot = document.getElementById('history-snapshot');
   const codeViewer = document.getElementById('code-viewer');
-  const snapshotCanvas = document.getElementById('snapshot-canvas');
+  const miniArenaCanvas = document.getElementById('mini-arena-canvas');
+  const miniArenaToggle = document.getElementById('mini-arena-toggle');
+  const miniArenaTick = document.getElementById('mini-arena-tick');
+  const miniArenaOpen = document.getElementById('mini-arena-open');
+  const miniArenaLegend = document.getElementById('mini-arena-legend');
   const snapshotMeta = document.getElementById('snapshot-meta');
   const followOn = document.getElementById('follow-on');
   const headToHeadMatrix = document.getElementById('head-to-head-matrix');
@@ -36,12 +40,29 @@
   const themeToggle = document.getElementById('theme-toggle');
   const themeIcon = document.getElementById('theme-icon');
   const themeLabel = document.getElementById('theme-label');
+  const referencePanel = document.getElementById('reference-panel');
+  const referenceSummary = document.getElementById('reference-summary');
+  const referenceGrid = document.getElementById('reference-grid');
+  const filterStrip = document.getElementById('leaderboard-filter');
+  const filterCount = document.getElementById('filter-count');
 
   const state = {
     results: null,
     modelKeys: [],
     selectedModel: null,
     selectedIteration: null,
+    filter: 'all',
+    expandedRows: new Set(),
+  };
+
+  // Mini-arena runtime state (lives outside state so it's easy to tear down).
+  const miniArena = {
+    engine: null,
+    loopId: null,
+    paused: false,
+    tick: 0,
+    entryId: null,
+    error: null,
   };
 
   function escapeHtml(value) {
@@ -280,16 +301,38 @@
     content.style.display = 'block';
 
     renderVersionBadge();
+    // Hero first: chart drawing depends only on model learning curves and
+    // (optionally) the reference mean for the dashed anchor.
+    renderChart();
+    renderLeaderboard();
+    renderReferencePanel();
+    renderProtocol();
     renderSummary();
     renderVerdicts();
-    renderProtocol();
-    renderComparisonTable();
-    renderChart();
     renderSelectors();
     renderSelectedRun();
     renderFollowOn();
     renderHeadToHeadMatrix();
     renderFailureTaxonomy();
+  }
+
+  // Heuristic tiering for the filter strip. Kept as substring tests so it
+  // stays readable and survives model-name additions; anything unknown falls
+  // through to `frontier` so brand-new models default to the top tier rather
+  // than vanish when a user clicks `Cheap`.
+  function tierFor(modelName) {
+    const m = String(modelName || '').toLowerCase();
+    // Specific mid-tier names must win over the generic cheap `mini` substring.
+    if (/(gpt-4\.1-mini|gpt-4-turbo|llama-3-70)/.test(m)) return 'mid';
+    if (/(haiku|mini|nano|flash|-8b|-7b|-3b)/.test(m)) return 'cheap';
+    if (/(sonnet|gpt-4o$)/.test(m)) return 'mid';
+    return 'frontier';
+  }
+
+  function tierLabel(tier) {
+    if (tier === 'cheap') return 'cheap';
+    if (tier === 'mid') return 'mid-tier';
+    return 'frontier';
   }
 
   function renderSummary() {
@@ -370,26 +413,123 @@
     ].join('');
   }
 
-  function renderComparisonTable() {
+  function renderLeaderboard() {
+    if (!filterStrip) return;
+
+    // Wire filter buttons exactly once. Repeated renders just toggle .active.
+    if (!filterStrip.dataset.wired) {
+      filterStrip.addEventListener('click', (e) => {
+        const btn = e.target.closest('button.filter-btn');
+        if (!btn) return;
+        const next = btn.dataset.filter || 'all';
+        if (next === state.filter) return;
+        state.filter = next;
+        // Collapse all rows on tier change so the table doesn't jump awkwardly.
+        state.expandedRows.clear();
+        // Re-run the full leaderboard render so button .active / .disabled classes
+        // stay in sync with the currently selected tier.
+        renderLeaderboard();
+      });
+      filterStrip.dataset.wired = 'true';
+    }
+
+    // Reflect active state on buttons + greyness on empty tiers.
     const entries = allComparisonEntries();
-    comparisonTableBody.innerHTML = entries.map((entry, index) => {
+    const tierCounts = { all: entries.length, frontier: 0, mid: 0, cheap: 0 };
+    entries.forEach(e => { tierCounts[tierFor(e.model)] = (tierCounts[tierFor(e.model)] || 0) + 1; });
+    Array.from(filterStrip.querySelectorAll('button.filter-btn')).forEach(btn => {
+      const f = btn.dataset.filter || 'all';
+      btn.classList.toggle('active', f === state.filter);
+      const c = tierCounts[f] || 0;
+      btn.classList.toggle('disabled', c === 0 && f !== 'all');
+      btn.setAttribute('title', c + ' model' + (c === 1 ? '' : 's') + ' in this tier');
+    });
+
+    renderLeaderboardTable();
+  }
+
+  function renderLeaderboardTable() {
+    const all = allComparisonEntries();
+    const filtered = state.filter === 'all'
+      ? all
+      : all.filter(e => tierFor(e.model) === state.filter);
+
+    if (filterCount) {
+      filterCount.textContent = filtered.length
+        ? filtered.length + ' of ' + all.length + ' model' + (all.length === 1 ? '' : 's')
+        : '';
+    }
+
+    if (!filtered.length) {
+      comparisonTableBody.innerHTML = `
+        <tr><td colspan="6"><div class="leaderboard-filter-empty">No models in this tier for this run. Select <strong>All</strong> to see every model.</div></td></tr>
+      `;
+      return;
+    }
+
+    const rows = filtered.map((entry, index) => {
+      const tier = tierFor(entry.model);
       const replayLink = entry.bestIteration
         ? `<a class="btn-link" href="arena.html?loadModel=${encodeURIComponent(entry.model)}&loadIter=${entry.bestIteration.iter}" target="_blank" rel="noopener noreferrer">Replay Best</a>`
-        : 'n/a';
+        : '<span style="color:var(--text-muted)">n/a</span>';
+      const bestPct = entry.bestAvgPct != null ? entry.bestAvgPct + '%' : 'n/a';
+      const bestIter = entry.bestIteration?.iter ?? 'n/a';
+      const expanded = state.expandedRows.has(entry.model);
+      const toggleLabel = expanded ? '&#9662;' : '&#9656;';
+      const expandRow = `
+        <tr class="expand-row" data-model-detail="${escapeHtml(entry.model)}" ${expanded ? '' : 'hidden'}>
+          <td colspan="6">
+            <div class="expand-grid">
+              <div><strong>Net improvement</strong><span>${escapeHtml(formatPercentDelta(entry.netImprovement))}</span></div>
+              <div><strong>Improvement rate</strong><span>${escapeHtml(formatPerIteration(entry.improvementRate))}</span></div>
+              <div><strong>Latest score</strong><span>${entry.latestAvgPct != null ? escapeHtml(entry.latestAvgPct + '%') : 'n/a'}</span></div>
+              <div><strong>Successful iterations</strong><span>${escapeHtml(String(entry.completedIterations ?? 'n/a'))}</span></div>
+              <div><strong>Stop reason</strong><span>${escapeHtml(formatStopReason(entry.stopReason))}</span></div>
+              <div><strong>Tier</strong><span>${escapeHtml(tierLabel(tier))}</span></div>
+            </div>
+          </td>
+        </tr>
+      `;
       return `
-      <tr>
-        <td>${index + 1}</td>
-        <td>${escapeHtml(entry.model)}</td>
-        <td>${escapeHtml(entry.bestAvgPct == null ? 'n/a' : `${entry.bestAvgPct}%`)}</td>
-        <td>${escapeHtml(entry.bestIteration?.iter ?? 'n/a')}</td>
-        <td>${escapeHtml(entry.latestAvgPct == null ? 'n/a' : `${entry.latestAvgPct}%`)}</td>
-        <td>${escapeHtml(formatPercentDelta(entry.netImprovement))}</td>
-        <td>${escapeHtml(entry.completedIterations)}</td>
-        <td>${escapeHtml(formatStopReason(entry.stopReason))}</td>
+      <tr data-model-row="${escapeHtml(entry.model)}">
+        <td class="rank-cell">${index + 1}</td>
+        <td class="model-cell">${escapeHtml(entry.model)}<span class="tier-chip">${escapeHtml(tierLabel(tier))}</span></td>
+        <td class="score-cell">${escapeHtml(bestPct)}</td>
+        <td>${escapeHtml(String(bestIter))}</td>
         <td>${replayLink}</td>
+        <td><button class="expand-toggle" data-model-toggle="${escapeHtml(entry.model)}" aria-expanded="${expanded ? 'true' : 'false'}" aria-label="Expand row details">${toggleLabel}</button></td>
       </tr>
-    `;
+      ${expandRow}
+      `;
     }).join('');
+
+    comparisonTableBody.innerHTML = rows;
+
+    // Wire per-row expand toggles. (Listeners re-bound each render is fine
+    // because innerHTML replaces the nodes — no orphan listeners accumulate.)
+    Array.from(comparisonTableBody.querySelectorAll('button.expand-toggle')).forEach(btn => {
+      btn.addEventListener('click', () => {
+        const m = btn.dataset.modelToggle;
+        if (!m) return;
+        if (state.expandedRows.has(m)) state.expandedRows.delete(m);
+        else state.expandedRows.add(m);
+        renderLeaderboardTable();
+      });
+    });
+  }
+
+  // Pull the mean reference percentage used to draw the dashed anchor line on
+  // the hero learning curve. Returns null if no reference benchmark data is in
+  // the current results file (older schemaVersion, or no reference run).
+  function referenceMeanPct() {
+    const rb = state.results?.referenceBenchmark;
+    if (!rb || !Array.isArray(rb.entries) || !rb.entries.length) return null;
+    const values = rb.entries
+      .map(e => Number(e.referenceMeanPct))
+      .filter(v => Number.isFinite(v));
+    if (!values.length) return null;
+    // Every entry shares the same reference; average just in case they differ.
+    return values.reduce((a, b) => a + b, 0) / values.length;
   }
 
   function renderChart() {
@@ -486,6 +626,16 @@
       `;
     }).join('');
 
+    // Optional dashed anchor for the held-out reference (mean across entries).
+    const refPct = referenceMeanPct();
+    let referenceLine = '';
+    let referenceLabel = '';
+    if (Number.isFinite(refPct)) {
+      const y = yForPct(refPct);
+      referenceLine = `<line x1="${left}" y1="${y}" x2="${left + chartWidth}" y2="${y}" stroke="var(--text-muted)" stroke-width="1.5" stroke-dasharray="6 4" />`;
+      referenceLabel = `<text x="${left + chartWidth - 6}" y="${y - 6}" text-anchor="end" style="font-size:11px; fill:var(--text-muted);">Reference ${refPct.toFixed(0)}%</text>`;
+    }
+
     learningCurve.innerHTML = `
       <rect x="0" y="0" width="${width}" height="${height}" fill="transparent" />
       ${gridLines}
@@ -494,8 +644,17 @@
       <line x1="${left}" y1="${top + chartHeight}" x2="${left + chartWidth}" y2="${top + chartHeight}" stroke="var(--border-hover)" stroke-width="1.5" />
       <line x1="${left}" y1="${top}" x2="${left}" y2="${top + chartHeight}" stroke="var(--border-hover)" stroke-width="1.5" />
       ${confidenceBands}
+      ${referenceLine}
+      ${referenceLabel}
       ${lines}
     `;
+
+    const legendReference = Number.isFinite(refPct)
+      ? `<div class="legend-item" title="Held-out reference algorithm — frozen, never seen by models">
+           <span class="legend-swatch" style="background:transparent; border-top:2px dashed var(--text-muted); border-radius:0; height:0;"></span>
+           <span>Held-out reference &middot; ${refPct.toFixed(0)}%</span>
+         </div>`
+      : '';
 
     chartLegend.innerHTML = state.results.rankings.map((entry, index) => {
       const color = COLORS[index % COLORS.length];
@@ -506,9 +665,67 @@
           <span>${escapeHtml(entry.model)} &middot; best ${escapeHtml(entry.bestAvgPct)}% &middot; net ${escapeHtml(formatPercentDelta(comparison.netImprovement))}</span>
         </div>
       `;
-    }).join('');
+    }).join('') + legendReference;
 
     attachChartTooltips();
+  }
+
+  /* ─── Held-out reference panel ─── */
+  function renderReferencePanel() {
+    if (!referencePanel || !referenceSummary || !referenceGrid) return;
+    const rb = state.results?.referenceBenchmark;
+    if (!rb || !Array.isArray(rb.entries) || !rb.entries.length) {
+      referencePanel.hidden = true;
+      return;
+    }
+    referencePanel.hidden = false;
+
+    const entries = rb.entries;
+    const losers = entries.filter(e => e.verdict === 'reference_better' && e.significant);
+    const deltas = entries.map(e => Number(e.meanDelta)).filter(Number.isFinite);
+    const medianDelta = deltas.length
+      ? (deltas.slice().sort((a, b) => a - b)[Math.floor(deltas.length / 2)])
+      : null;
+
+    let summary;
+    if (losers.length === entries.length && entries.length > 1) {
+      summary = `All ${entries.length} models lose to the held-out reference — median Δ = ${formatPercentDelta(medianDelta)}, CI excludes zero for every model.`;
+    } else if (losers.length) {
+      summary = `${losers.length} of ${entries.length} model${entries.length === 1 ? '' : 's'} significantly lose to the reference (CI excludes zero). Median Δ across all models: ${formatPercentDelta(medianDelta)}.`;
+    } else {
+      const tied = entries.filter(e => !e.significant).length;
+      // `referenceSummary.textContent = summary` escapes automatically; escapeHtml
+      // here would cause literal `&amp;` / `&lt;` / `&gt;` to render on screen.
+      summary = `${tied} model${tied === 1 ? '' : 's'} not distinguishable from the reference (CI overlaps zero). Reference: ${rb.referenceName || 'held-out'}.`;
+    }
+    referenceSummary.textContent = summary;
+
+    referenceGrid.innerHTML = entries.map(e => {
+      const delta = Number(e.meanDelta);
+      const deltaClass = !Number.isFinite(delta) ? '' : (delta >= 0 ? 'pos' : 'neg');
+      const ciLow = Number.isFinite(e.ciLow) ? e.ciLow.toFixed(1) : '?';
+      const ciHigh = Number.isFinite(e.ciHigh) ? e.ciHigh.toFixed(1) : '?';
+      let verdictText;
+      let verdictClass;
+      if (e.verdict === 'reference_better' && e.significant) {
+        verdictText = 'Loses to the reference (significant)';
+        verdictClass = 'loses';
+      } else if (e.verdict === 'model_better' && e.significant) {
+        verdictText = 'Beats the reference (significant)';
+        verdictClass = 'wins';
+      } else {
+        verdictText = 'Not distinguishable from the reference';
+        verdictClass = 'tied';
+      }
+      return `
+        <div class="reference-card">
+          <div class="ref-model">${escapeHtml(e.model)} <span style="color:var(--text-muted); font-weight:400; font-size:12px;">&middot; iter ${escapeHtml(String(e.iter))}</span></div>
+          <div class="ref-delta ${deltaClass}">${escapeHtml(formatPercentDelta(delta))}</div>
+          <div class="ref-ci">95% CI [${ciLow}, ${ciHigh}] &middot; ${escapeHtml(String(e.gamesPlayed ?? 'n/a'))} games &middot; ${escapeHtml(String(e.winsVsReference ?? 0))}W</div>
+          <div class="ref-verdict ${verdictClass}">${escapeHtml(verdictText)}</div>
+        </div>
+      `;
+    }).join('');
   }
 
   function attachChartTooltips() {
@@ -606,7 +823,8 @@
       historySnapshot.innerHTML = '';
       codeViewer.innerHTML = syntaxHighlight('// no generated code available');
       snapshotMeta.innerHTML = '';
-      drawGrid(null);
+      stopMiniArena();
+      drawMiniArenaMessage('No iteration selected');
       return;
     }
 
@@ -635,18 +853,21 @@
 
     codeViewer.innerHTML = syntaxHighlight(selectedIteration.rawCode || '// no generated code captured');
 
-    if (selectedIteration.representativeGame && selectedIteration.representativeGame.finalGrid) {
-      snapshotMeta.innerHTML = [
-        metaItem('Representative game', `#${selectedIteration.representativeGame.gameNumber}`),
-        metaItem('Territory', `${selectedIteration.representativeGame.pct}%`),
-        metaItem('Ticks', selectedIteration.representativeGame.ticks),
-        metaItem('Winning player slot', `Player ${selectedIteration.representativeGame.winnerIndex + 1}`),
-      ].join('');
-      drawGrid(selectedIteration.representativeGame.finalGrid);
-    } else {
-      snapshotMeta.innerHTML = metaItem('Snapshot evidence', 'Not available in this result file');
-      drawGrid(null);
+    // Populate the meta list with iteration-evidence (score, ticks) so the
+    // mini arena has numbers alongside it. The static "representative game"
+    // grid is gone; the live replay below now plays the model's actual code.
+    const rep = selectedIteration.representativeGame;
+    const metaRows = [
+      metaItem('Iteration mean', `${selectedIteration.avgPct}% territory`),
+      metaItem('Iteration mean ticks', selectedIteration.avgTicks ?? 'n/a'),
+    ];
+    if (rep) {
+      metaRows.push(metaItem('Representative game', `${rep.pct}% in ${rep.ticks} ticks`));
     }
+    snapshotMeta.innerHTML = metaRows.join('');
+
+    // (Re)start the inline mini arena for this iteration.
+    startMiniArenaForIteration(state.selectedModel, selectedIteration);
   }
 
   function renderFollowOn() {
@@ -843,28 +1064,55 @@
     return html;
   }
 
-  function drawGrid(grid) {
-    const ctx = snapshotCanvas.getContext('2d');
-    const canvasSize = snapshotCanvas.width;
+  /* ─── Inline mini arena (looped replay of model code) ─── */
 
+  // The mini arena runs a real ArenaEngine game with the selected iteration's
+  // algorithm in seat 0 and shared baselines in seats 1..n. It auto-loops: when
+  // a game finishes we hold for ~1s then restart with fresh seats. Pause/resume
+  // is wired to the Pause button in the controls.
+
+  const MINI_GRID_SIZE = 40;
+  const MINI_PLAYERS = 4;
+  const MINI_TICK_MS = 45;
+  const MINI_HOLD_MS = 900;
+
+  function pickMiniBaselines() {
+    // Prefer the registry's baselines (same source the arena page uses). Fall
+    // back to the global ALGOS array if the registry hasn't loaded.
+    let fns = [];
+    if (window.ArenaRegistry && typeof window.ArenaRegistry.getBaselines === 'function') {
+      fns = window.ArenaRegistry.getBaselines()
+        .slice(0, MINI_PLAYERS - 1)
+        .map(b => b.fn)
+        .filter(fn => typeof fn === 'function');
+    }
+    if (fns.length < MINI_PLAYERS - 1 && typeof ALGOS !== 'undefined' && Array.isArray(ALGOS)) {
+      fns = ALGOS.slice(0, MINI_PLAYERS - 1);
+    }
+    return fns;
+  }
+
+  function drawMiniBoard() {
+    if (!miniArenaCanvas) return;
+    const ctx = miniArenaCanvas.getContext('2d');
+    const canvasSize = miniArenaCanvas.width;
     ctx.clearRect(0, 0, canvasSize, canvasSize);
 
-    // Dark-mode-aware background
     const isDark = document.documentElement.getAttribute('data-theme') !== 'light';
     ctx.fillStyle = isDark ? '#1e1e1e' : '#f7f7f7';
     ctx.fillRect(0, 0, canvasSize, canvasSize);
 
-    if (!grid || !grid.length) {
+    if (!miniArena.engine) {
       ctx.fillStyle = isDark ? '#888' : '#555';
       ctx.font = '13px -apple-system, BlinkMacSystemFont, sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText('No board snapshot available', canvasSize / 2, canvasSize / 2);
+      ctx.fillText(miniArena.error || 'Loading…', canvasSize / 2, canvasSize / 2);
       return;
     }
 
+    const grid = miniArena.engine.grid;
     const size = grid.length;
     const px = canvasSize / size;
-
     for (let row = 0; row < size; row++) {
       for (let col = 0; col < size; col++) {
         const cell = grid[row][col];
@@ -877,6 +1125,130 @@
         ctx.fillRect(col * px, row * px, px, px);
       }
     }
+  }
+
+  function drawMiniArenaMessage(message) {
+    if (!miniArenaCanvas) return;
+    miniArena.engine = null;
+    miniArena.error = message;
+    drawMiniBoard();
+    if (miniArenaTick) miniArenaTick.textContent = '';
+    if (miniArenaLegend) miniArenaLegend.innerHTML = '';
+  }
+
+  function stopMiniArena() {
+    if (miniArena.loopId) {
+      clearTimeout(miniArena.loopId);
+      miniArena.loopId = null;
+    }
+  }
+
+  function startMiniArenaForIteration(modelName, iter) {
+    if (!miniArenaCanvas) return;
+    stopMiniArena();
+
+    const entryId = modelName + '@' + iter.iter;
+    miniArena.entryId = entryId;
+    miniArena.paused = false;
+    miniArena.error = null;
+    if (miniArenaToggle) miniArenaToggle.textContent = 'Pause';
+    if (miniArenaOpen) {
+      miniArenaOpen.href = `arena.html?loadModel=${encodeURIComponent(modelName)}&loadIter=${iter.iter}`;
+    }
+
+    // Compile the model's code via the registry. Fall back to a clear error on
+    // failure — don't pretend a baseline is the model's code.
+    let modelFn = null;
+    try {
+      if (window.ArenaRegistry && typeof window.ArenaRegistry.findEntry === 'function') {
+        const entry = window.ArenaRegistry.findEntry(entryId);
+        if (entry) {
+          modelFn = window.ArenaRegistry.compile(entry);
+        }
+      }
+    } catch (err) {
+      console.warn('[mini-arena] compile failed for', entryId, err);
+      drawMiniArenaMessage('Could not compile model code');
+      return;
+    }
+    if (typeof modelFn !== 'function') {
+      drawMiniArenaMessage('No compiled algorithm available');
+      return;
+    }
+
+    const baselines = pickMiniBaselines();
+    if (baselines.length < MINI_PLAYERS - 1) {
+      drawMiniArenaMessage('Not enough baselines to populate opponents');
+      return;
+    }
+
+    if (typeof ArenaEngine === 'undefined') {
+      drawMiniArenaMessage('engine.js not loaded');
+      return;
+    }
+
+    const algos = [modelFn, ...baselines.slice(0, MINI_PLAYERS - 1)];
+    miniArena.engine = new ArenaEngine(MINI_GRID_SIZE, MINI_PLAYERS, algos);
+    miniArena.tick = 0;
+
+    // Legend: model in seat 0, baselines in 1..n.
+    const baselineNames = (window.ArenaRegistry?.getBaselines?.() || []).slice(0, MINI_PLAYERS - 1).map(b => b.displayName || b.name);
+    const legendItems = [`<span><span class="swatch" style="background:${COLORS[0]}"></span>seat 0: ${escapeHtml(modelName)} iter ${escapeHtml(String(iter.iter))}</span>`];
+    baselineNames.forEach((n, i) => {
+      legendItems.push(`<span><span class="swatch" style="background:${COLORS[(i + 1) % COLORS.length]}"></span>seat ${i + 1}: ${escapeHtml(n)}</span>`);
+    });
+    if (miniArenaLegend) miniArenaLegend.innerHTML = legendItems.join('');
+
+    drawMiniBoard();
+    if (miniArenaTick) miniArenaTick.textContent = 'tick 0';
+    scheduleMiniTick();
+  }
+
+  function scheduleMiniTick() {
+    miniArena.loopId = setTimeout(() => {
+      if (miniArena.paused || !miniArena.engine) return;
+      let result;
+      try {
+        result = miniArena.engine.step();
+      } catch (err) {
+        console.warn('[mini-arena] step failed:', err);
+        drawMiniArenaMessage('Algorithm threw during play');
+        return;
+      }
+      miniArena.tick = miniArena.engine.tick;
+      drawMiniBoard();
+      if (miniArenaTick) miniArenaTick.textContent = `tick ${miniArena.tick}`;
+
+      if (result && result.done) {
+        // Hold the completed board for a moment, then restart with a fresh
+        // engine so the replay auto-loops without user input.
+        miniArena.loopId = setTimeout(() => {
+          if (miniArena.paused) return;
+          if (miniArena.engine && miniArena.engine.algos) {
+            miniArena.engine = new ArenaEngine(MINI_GRID_SIZE, MINI_PLAYERS, miniArena.engine.algos);
+            miniArena.tick = 0;
+            drawMiniBoard();
+            if (miniArenaTick) miniArenaTick.textContent = 'tick 0';
+            scheduleMiniTick();
+          }
+        }, MINI_HOLD_MS);
+        return;
+      }
+      scheduleMiniTick();
+    }, MINI_TICK_MS);
+  }
+
+  if (miniArenaToggle) {
+    miniArenaToggle.addEventListener('click', () => {
+      miniArena.paused = !miniArena.paused;
+      miniArenaToggle.textContent = miniArena.paused ? 'Play' : 'Pause';
+      if (!miniArena.paused) {
+        // Clear any pending timeout before scheduling a fresh tick so rapid
+        // pause/unpause cycles cannot fork the loop into parallel chains.
+        stopMiniArena();
+        scheduleMiniTick();
+      }
+    });
   }
 
   /* ─── Theme Toggle ─── */
@@ -898,17 +1270,9 @@
     localStorage.setItem('arena-war-theme', theme);
     if (themeIcon) themeIcon.textContent = theme === 'dark' ? '\u2600' : '\u263E';
     if (themeLabel) themeLabel.textContent = theme === 'dark' ? 'Light' : 'Dark';
-    // Redraw canvas if needed since background color depends on theme
-    if (state.results) {
-      const modelResult = state.results.models[state.selectedModel];
-      const selectedIteration = modelResult?.iterations.find(iter => iter.iter === state.selectedIteration && !iter.error)
-        || modelResult?.iterations.find(iter => !iter.error)
-        || null;
-      if (selectedIteration?.representativeGame?.finalGrid) {
-        drawGrid(selectedIteration.representativeGame.finalGrid);
-      } else {
-        drawGrid(null);
-      }
+    // Redraw the mini arena since its background color depends on theme.
+    if (state.results && miniArena.engine) {
+      drawMiniBoard();
     }
   }
 
