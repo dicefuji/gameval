@@ -95,6 +95,14 @@
   - Main user-facing results surface.
   - Intended to show who improved fastest, who finished strongest, why the comparison is trustworthy, and what the selected iteration actually did.
   - Loads run data through `window.ArenaRegistry` (see `registry.js`) so a fresh clone without a local eval run still renders the bundled `sample-eval-results.json`. Legacy fetch path stays as a fallback when the registry is not loaded (e.g. running `results.html` as a plain file without the `<script src="registry.js">` tag).
+  - Also loads `engine.js` so the inline mini-arena (Phase 9C) can run the registry-compiled model code live, not just render a static snapshot.
+  - Phase 9C redesign hierarchy (first-screen surfaces first):
+    1. Hero: Figure 1 learning-curves panel with an optional dashed held-out-reference anchor (drawn when `referenceBenchmark.entries[*].referenceMeanPct` is present).
+    2. Compact Leaderboard (Rank / Model / Best / Iter / Replay) with a filter strip (`All / Frontier / Cheap / Mid-tier`) and a per-row `▸` disclosure that expands to show net improvement, improvement rate, latest score, successful iterations, stop reason, and tier. Tiering is a substring heuristic in `tierFor()` — unknown model names fall through to `frontier` so new models are visible by default.
+    3. Held-Out Reference Benchmark panel with a one-line summary above per-model cards (Δ, 95% CI, wins, verdict tag). Hidden when no reference data is present.
+    4. Shared Protocol strip, Benchmark Summary, Comparison Verdict, methodology + how-to-read cards.
+    5. Head-to-Head matrix, Failure Taxonomy (unchanged from earlier phases).
+    6. "Inspect a model run" toolbar + detail grid. The old static "Representative Board Snapshot" canvas is gone; its place is taken by a **Live Replay** mini arena that runs a real `ArenaEngine` game with the selected iteration's algorithm in seat 0 against the registry baselines, auto-looping between games. Pause/Play toggles the loop; "Open in full arena" links through to `arena.html?loadModel=...&loadIter=...`.
   - Currently includes:
     - "How to read this run"
     - methodology bridge
@@ -149,9 +157,10 @@
 - The Failure Taxonomy section renders per-model bar rows for each annotated flag and writes a one-sentence natural-language summary per model. It falls back to an "older eval version" message when the loaded `eval-results.json` predates Phase 7.
 - The arena (`arena.html`) surfaces real model-generated algorithms via the Phase 9A picker, not just hardcoded baselines.
 - The arena received its Phase 9B visual redesign: two-pane canvas/controls layout, shared tokens + theme toggle matching `results.html`, and the manual-paste flow moved behind a `<details>` disclosure so no placeholder code is visible on first load.
+- `results.html` received its Phase 9C visual redesign: hero learning curve with held-out-reference dashed anchor, compact Vending-Bench-style leaderboard with filter strip and per-row expand disclosure, promoted held-out reference panel with one-line summary, and a live inline mini-arena replay (using `ArenaEngine`) that replaces the static representative-snapshot canvas.
 - The frontend is still limited in a few areas:
-  - dashboard hero (learning curve should be the first panel rather than buried mid-page — slated for Phase 9C)
   - shared design tokens (arena and dashboard still duplicate the token block inline — extraction into `styles.css` is slated for Phase 9D)
+  - Phase 8B statistical surfaces (Bradley-Terry ratings table, bootstrap pairwise CI note) are present in `sample-eval-results.json` / `eval-results.json` but are not currently rendered on the dashboard; they were lost when Phase 9A replaced `results.html` wholesale. Re-landing them is a separate task from Phase 9C and should target the `referenceBenchmark`/`ratings`/`pairwiseComparisons` keys already present in the sample data.
 
 ## Current State Of The Runner
 - Function extraction was fixed to support model-generated code that contains JavaScript template literals.
