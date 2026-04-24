@@ -119,7 +119,7 @@
   - Interactive sandbox and future replay surface.
   - Not the main benchmark surface.
   - Hosts a "Load algorithm into seat 0" combobox (Phase 9A) populated from `ArenaRegistry` — every baseline plus every model × iteration in the loaded eval output. The URL-params auto-load path (`?loadModel=...&loadIter=...`) also routes through the registry.
-  - Phase 9B redesign: shares the same CSS custom-property design tokens as `results.html` (via a duplicated `<style>` block; Phase 9D will extract to a shared `styles.css`); includes a light/dark theme toggle with `localStorage`-backed preference. Layout is a two-pane grid at ≥1000px (canvas stage left, controls column right); canvas is the left pane, the right pane stacks `seat 0 algorithm` picker → `territory` → `players` → `game history`. The manual paste flow lives inside a collapsed `<details class="advanced">` disclosure at the bottom so the placeholder textarea does not sit under the canvas on first load.
+  - Phase 9B redesign: shares the same CSS custom-property design tokens as `results.html`; Phase 9D extracted those tokens + base resets + `.page-links` + `.theme-toggle` + `.panel-title` into a shared `styles.css` loaded by both pages. Includes a light/dark theme toggle with `localStorage`-backed preference. Layout is a two-pane grid at ≥1000px (canvas stage left, controls column right); canvas is the left pane, the right pane stacks `seat 0 algorithm` picker → `territory` → `players` → `game history`. The manual paste flow lives inside a collapsed `<details class="advanced">` disclosure at the bottom so the placeholder textarea does not sit under the canvas on first load.
 - `engine.js`
   - Browser game engine.
   - Still duplicates logic that also exists in `eval-runner.js`.
@@ -158,8 +158,8 @@
 - The arena (`arena.html`) surfaces real model-generated algorithms via the Phase 9A picker, not just hardcoded baselines.
 - The arena received its Phase 9B visual redesign: two-pane canvas/controls layout, shared tokens + theme toggle matching `results.html`, and the manual-paste flow moved behind a `<details>` disclosure so no placeholder code is visible on first load.
 - `results.html` received its Phase 9C visual redesign: hero learning curve with held-out-reference dashed anchor, compact Vending-Bench-style leaderboard with filter strip and per-row expand disclosure, promoted held-out reference panel with one-line summary, and a live inline mini-arena replay (using `ArenaEngine`) that replaces the static representative-snapshot canvas.
+- `styles.css` (Phase 9D) now carries the shared design tokens (both themes), base resets, `#root` container, `.page-links` (including active state), `.theme-toggle`, and the `.panel-title` primitive. Both pages link it ahead of their page-specific `<style>` block. Typography that genuinely differs per page (`h1` size, `.subhead` width, `.page-header` margin) intentionally stays inline so the extraction is visual-regression-free.
 - The frontend is still limited in a few areas:
-  - shared design tokens (arena and dashboard still duplicate the token block inline — extraction into `styles.css` is slated for Phase 9D)
   - Phase 8B statistical surfaces (Bradley-Terry ratings table, bootstrap pairwise CI note) are present in `sample-eval-results.json` / `eval-results.json` but are not currently rendered on the dashboard; they were lost when Phase 9A replaced `results.html` wholesale. Re-landing them is a separate task from Phase 9C and should target the `referenceBenchmark`/`ratings`/`pairwiseComparisons` keys already present in the sample data.
 
 ## Current State Of The Runner

@@ -83,6 +83,7 @@ The benchmark-first workflow is:
 ├── results.html                — results dashboard shell
 ├── results.js                  — results dashboard logic
 ├── sample-eval-results.json    — bundled sample run so fresh clones render
+├── styles.css                  — shared design tokens + base chrome (both pages)
 ├── ui.js                       — sandbox UI controller
 ├── eval-results.json           — local eval output written by the runner (gitignored)
 └── README.md
@@ -120,6 +121,9 @@ Shared data layer loaded by both `results.html` and `arena.html`. Exposes `windo
 
 ### `sample-eval-results.json`
 Bundled eval output that ships with the repo. Tracked via an `!` override in `.gitignore`. Used only as a fallback when there is no live `eval-results.json`; a local run overwrites the view on disk (`eval-results.json` takes precedence in the loader).
+
+### `styles.css`
+Shared stylesheet loaded by both `arena.html` and `results.html` ahead of each page's own `<style>` block. Carries the design tokens (both dark and light themes), base resets, the `#root` container, the top-nav `.page-links` (with active state), the `.theme-toggle`, and the `.panel-title` primitive. Page-specific typography that intentionally differs (`h1` size, `.subhead` width, `.page-header` margin) stays inline on each page.
 
 ---
 
