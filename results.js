@@ -230,11 +230,23 @@
 
   async function loadResults() {
     try {
-      const response = await fetch('eval-results.json', { cache: 'no-store' });
-      if (!response.ok) {
-        throw new Error(`Could not load eval-results.json (${response.status})`);
+      // Prefer the shared ArenaRegistry loader if available (Phase 9A+).
+      // It tries eval-results.json first and falls back to the bundled
+      // sample-eval-results.json so fresh clones always have something to show.
+      let raw = null;
+      if (window.ArenaRegistry && typeof window.ArenaRegistry.load === 'function') {
+        await window.ArenaRegistry.load();
+        raw = window.ArenaRegistry.getResults();
+        if (!raw) {
+          throw new Error(window.ArenaRegistry.getLoadError() || 'No eval output found');
+        }
+      } else {
+        const response = await fetch('eval-results.json', { cache: 'no-store' });
+        if (!response.ok) {
+          throw new Error(`Could not load eval-results.json (${response.status})`);
+        }
+        raw = await response.json();
       }
-      const raw = await response.json();
       const normalized = normalizeLegacyResults(raw);
       if (!normalized) {
         throw new Error('eval-results.json did not match a supported schema');
