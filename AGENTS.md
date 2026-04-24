@@ -104,8 +104,10 @@
     2. Compact Leaderboard (Rank / Model / Best / Iter / Replay) with a filter strip (`All / Frontier / Cheap / Mid-tier`) and a per-row `▸` disclosure that expands to show net improvement, improvement rate, latest score, successful iterations, stop reason, and tier. Tiering is a substring heuristic in `tierFor()` — unknown model names fall through to `frontier` so new models are visible by default.
     3. Held-Out Reference Benchmark panel with a one-line summary above per-model cards (Δ, 95% CI, wins, verdict tag). Hidden when no reference data is present.
     4. Shared Protocol strip, Benchmark Summary, Comparison Verdict, methodology + how-to-read cards.
-    5. Head-to-Head matrix, Failure Taxonomy (unchanged from earlier phases).
-    6. "Inspect a model run" toolbar + detail grid. The old static "Representative Board Snapshot" canvas is gone; its place is taken by a **Live Replay** mini arena that runs a real `ArenaEngine` game with the selected iteration's algorithm in seat 0 against the registry baselines, auto-looping between games. Pause/Play toggles the loop; "Open in full arena" links through to `arena.html?loadModel=...&loadIter=...`.
+    5. Pairwise Comparisons panel (Phase 10): one card per pair from `pairwiseComparisons[]` showing bootstrap Δ, 95% CI, sample sizes, and verdict (`a_better` / `b_better` / `tied`); panel auto-hides when the key is absent.
+    6. Head-to-Head Matrix (Phase 10): (N+1)×(N+1) grid consuming `headToHead.pairs[]`. Row/column model-name headers with a `row vs col` corner legend; each data cell shows `rowWins–colWins (N draws)` tinted green/orange when `significant` is true and muted otherwise, plus a second-line `Δ X% · CI [L,H]`. Cells flip the stored pair's wins/delta when `pair.modelA === colModel` so the matrix reads symmetrically.
+    7. Failure Taxonomy (unchanged from earlier phases).
+    8. "Inspect a model run" toolbar + detail grid. The old static "Representative Board Snapshot" canvas is gone; its place is taken by a **Live Replay** mini arena that runs a real `ArenaEngine` game with the selected iteration's algorithm in seat 0 against the registry baselines, auto-looping between games. Pause/Play toggles the loop; "Open in full arena" links through to `arena.html?loadModel=...&loadIter=...`.
   - Currently includes:
     - "How to read this run"
     - methodology bridge
@@ -163,7 +165,7 @@
 - `results.html` received its Phase 9C visual redesign: hero learning curve with held-out-reference dashed anchor, compact Vending-Bench-style leaderboard with filter strip and per-row expand disclosure, promoted held-out reference panel with one-line summary, and a live inline mini-arena replay (using `ArenaEngine`) that replaces the static representative-snapshot canvas.
 - `styles.css` (Phase 9D) now carries the shared design tokens (both themes), base resets, `#root` container, `.page-links` (including active state), `.theme-toggle`, and the `.panel-title` primitive. Both pages link it ahead of their page-specific `<style>` block. Typography that genuinely differs per page (`h1` size, `.subhead` width, `.page-header` margin) intentionally stays inline so the extraction is visual-regression-free.
 - The frontend is still limited in a few areas:
-  - Phase 8B statistical surfaces (Bradley-Terry ratings table, bootstrap pairwise CI note) are present in `sample-eval-results.json` / `eval-results.json` but are not currently rendered on the dashboard; they were lost when Phase 9A replaced `results.html` wholesale. Re-landing them is a separate task from Phase 9C and should target the `referenceBenchmark`/`ratings`/`pairwiseComparisons` keys already present in the sample data.
+  - Phase 8B `pairwiseComparisons[]` and `headToHead.pairs[]` now render via the Phase 10 panels above. The Bradley-Terry `ratings[]` table remains unrendered on the dashboard — re-landing it is the remaining Phase 8B surface.
 
 ## Current State Of The Runner
 - Function extraction was fixed to support model-generated code that contains JavaScript template literals.
@@ -207,8 +209,9 @@
   1. Consider held-out reference algorithms and Elo-style rating.
   2. Stronger statistical interpretation around plateau detection (compare CI overlap rather than fixed thresholds).
   3. Full delegation of `eval-runner.js` to `games/<name>/index.js` so the root `engine.js` / `algorithms.js` / `prompts.js` copies can be retired.
+- Phase 10 addressed: head-to-head matrix and pairwise comparisons panel now render `headToHead.pairs[]` and `pairwiseComparisons[]` respectively; both include CIs and significance tints.
 - The most important UX gaps still open:
-  1. Populate the head-to-head matrix panel with real data.
+  1. Surface the Bradley-Terry `ratings[]` table (last remaining Phase 8B dashboard surface).
   2. Further surface consistency/uncertainty alongside the CI bands on the learning curve.
   3. Provide a more seamless path from "best-vs-best candidate" to actual arena replay.
 
