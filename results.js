@@ -322,8 +322,10 @@
   // than vanish when a user clicks `Cheap`.
   function tierFor(modelName) {
     const m = String(modelName || '').toLowerCase();
+    // Specific mid-tier names must win over the generic cheap `mini` substring.
+    if (/(gpt-4\.1-mini|gpt-4-turbo|llama-3-70)/.test(m)) return 'mid';
     if (/(haiku|mini|nano|flash|-8b|-7b|-3b)/.test(m)) return 'cheap';
-    if (/(sonnet|gpt-4o$|gpt-4\.1-mini|gpt-4-turbo|llama-3-70)/.test(m)) return 'mid';
+    if (/(sonnet|gpt-4o$)/.test(m)) return 'mid';
     return 'frontier';
   }
 
@@ -424,7 +426,9 @@
         state.filter = next;
         // Collapse all rows on tier change so the table doesn't jump awkwardly.
         state.expandedRows.clear();
-        renderLeaderboardTable();
+        // Re-run the full leaderboard render so button .active / .disabled classes
+        // stay in sync with the currently selected tier.
+        renderLeaderboard();
       });
       filterStrip.dataset.wired = 'true';
     }
