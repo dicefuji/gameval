@@ -170,6 +170,10 @@
     .control-panel + .control-panel {
       border-top: 1px solid var(--border-subtle);
     }
+    /* Preserve arena's original 10px panel-title spacing; styles.css sets 12px
+       for the denser results.html panels, but arena's control panels are
+       tighter and looked right at 10px before the extraction. */
+    .control-panel .panel-title { margin-bottom: 10px; }
 
     /* Algorithm picker */
     .picker-row {
