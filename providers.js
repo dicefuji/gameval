@@ -85,6 +85,21 @@ function reasoningTokenFloor(effort) {
   }
 }
 
+// Per-request timeout in ms for reasoning models by effort level. The
+// OpenAI SDK's default (10 min) kills long reasoning runs on iterative
+// prompts with lots of context — empirically gpt-5.4 at effort=high on
+// a full iterative prompt can take 10-20 minutes. Defaults below are
+// chosen to cover observed max latency with ~2x headroom.
+function reasoningRequestTimeoutMs(effort) {
+  switch (effort) {
+    case 'xhigh': return 60 * 60 * 1000;
+    case 'high': return 30 * 60 * 1000;
+    case 'medium': return 20 * 60 * 1000;
+    case 'low':
+    default: return 15 * 60 * 1000;
+  }
+}
+
 async function callOpenAI(client, model, prompt, maxTokens, options = {}) {
   const start = Date.now();
   const isReasoning = useCompletionTokensParam(model);
@@ -100,12 +115,18 @@ async function callOpenAI(client, model, prompt, maxTokens, options = {}) {
   const reasoningParam = (isReasoning && reasoningEffort)
     ? { reasoning_effort: reasoningEffort }
     : {};
+  // Per-request timeout: reasoning models on iterative prompts routinely
+  // exceed the SDK default (10 min). Extend the timeout for reasoning calls
+  // proportional to effort; leave non-reasoning calls at the SDK default.
+  const requestOpts = isReasoning
+    ? { timeout: reasoningRequestTimeoutMs(reasoningEffort) }
+    : undefined;
   const response = await client.chat.completions.create({
     model,
     ...tokenParam,
     ...reasoningParam,
     messages: [{ role: 'user', content: prompt }],
-  });
+  }, requestOpts);
   const latency = Date.now() - start;
 
   const text = response.choices?.[0]?.message?.content ?? '';
