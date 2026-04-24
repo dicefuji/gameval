@@ -949,31 +949,45 @@
     }
     const models = rankings.map(r => r.model);
     const pairs = Array.isArray(state.results?.headToHead?.pairs) ? state.results.headToHead.pairs : [];
-    const cellHTML = models.map(rowModel => models.map(colModel => {
-      if (rowModel === colModel) return `<div class="h2h-cell diag">—</div>`;
-      const pair = pairs.find(p =>
-        (p.modelA === rowModel && p.modelB === colModel) ||
-        (p.modelA === colModel && p.modelB === rowModel));
-      if (!pair) return `<div class="h2h-cell"><div style="color:var(--text-muted); font-size:11px;">no data</div></div>`;
-      const flip = pair.modelA === colModel;
-      const rowWins = flip ? pair.winsB : pair.winsA;
-      const colWins = flip ? pair.winsA : pair.winsB;
-      const delta = (flip ? -1 : 1) * Number(pair.meanDelta);
-      const ciLow = (flip ? -1 : 1) * Number(pair.ciHigh);
-      const ciHigh = (flip ? -1 : 1) * Number(pair.ciLow);
-      const lo = Math.min(ciLow, ciHigh), hi = Math.max(ciLow, ciHigh);
-      const scoreClass = !Number.isFinite(delta) ? 'tied' : (pair.significant ? (delta > 0 ? 'pos' : 'neg') : 'tied');
-      const drawsSegment = pair.draws > 0 ? ` <span style="color:var(--text-muted); font-size:11px;">(${escapeHtml(String(pair.draws))} draw${pair.draws === 1 ? '' : 's'})</span>` : '';
-      return `
-        <div class="h2h-cell">
-          <div class="h2h-score ${scoreClass}">${escapeHtml(String(rowWins))}–${escapeHtml(String(colWins))}${drawsSegment}</div>
-          <div class="h2h-meta">Δ ${escapeHtml(formatPercentDelta(delta))} · CI [${lo.toFixed(1)}, ${hi.toFixed(1)}]</div>
-        </div>`;
-    }).join('')).join('');
 
+    // Corner + column headers (row 0). Corner is a small "row \\ col" legend so the
+    // reader knows which axis reads as "wins" when scanning any data cell.
+    const colHeaders = [
+      `<div class="h2h-cell corner"><span class="h2h-axis-legend">row <span>vs</span> col</span></div>`,
+      ...models.map(m => `<div class="h2h-cell header col">${escapeHtml(m)}</div>`),
+    ].join('');
+
+    const bodyRows = models.map(rowModel => {
+      const rowHeader = `<div class="h2h-cell header row">${escapeHtml(rowModel)}</div>`;
+      const dataCells = models.map(colModel => {
+        if (rowModel === colModel) return `<div class="h2h-cell diag">—</div>`;
+        const pair = pairs.find(p =>
+          (p.modelA === rowModel && p.modelB === colModel) ||
+          (p.modelA === colModel && p.modelB === rowModel));
+        if (!pair) return `<div class="h2h-cell"><div style="color:var(--text-muted); font-size:11px;">no data</div></div>`;
+        const flip = pair.modelA === colModel;
+        const rowWins = flip ? pair.winsB : pair.winsA;
+        const colWins = flip ? pair.winsA : pair.winsB;
+        const delta = (flip ? -1 : 1) * Number(pair.meanDelta);
+        const ciLow = (flip ? -1 : 1) * Number(pair.ciHigh);
+        const ciHigh = (flip ? -1 : 1) * Number(pair.ciLow);
+        const lo = Math.min(ciLow, ciHigh), hi = Math.max(ciLow, ciHigh);
+        const scoreClass = !Number.isFinite(delta) ? 'tied' : (pair.significant ? (delta > 0 ? 'pos' : 'neg') : 'tied');
+        const drawsSegment = pair.draws > 0 ? ` <span style="color:var(--text-muted); font-size:11px;">(${escapeHtml(String(pair.draws))} draw${pair.draws === 1 ? '' : 's'})</span>` : '';
+        return `
+          <div class="h2h-cell">
+            <div class="h2h-score ${scoreClass}">${escapeHtml(String(rowWins))}–${escapeHtml(String(colWins))}${drawsSegment}</div>
+            <div class="h2h-meta">Δ ${escapeHtml(formatPercentDelta(delta))} · CI [${lo.toFixed(1)}, ${hi.toFixed(1)}]</div>
+          </div>`;
+      }).join('');
+      return rowHeader + dataCells;
+    }).join('');
+
+    // Grid is (N+1) wide: one label column + N data columns.
     headToHeadMatrix.innerHTML = `
-      <div style="display:grid; grid-template-columns: repeat(${models.length}, minmax(150px, 1fr)); gap:10px; overflow-x:auto;">
-        ${cellHTML}
+      <div style="display:grid; grid-template-columns: minmax(140px, auto) repeat(${models.length}, minmax(150px, 1fr)); gap:10px; overflow-x:auto;">
+        ${colHeaders}
+        ${bodyRows}
       </div>`;
   }
 

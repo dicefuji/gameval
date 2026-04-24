@@ -833,6 +833,12 @@
       line-height: 1.35;
     }
     .h2h-cell.diag { background: var(--bg-chip); display: flex; align-items: center; justify-content: center; font-weight: 600; color: var(--text-muted); }
+    .h2h-cell.header { background: var(--bg-chip); font-weight: 600; font-size: 12px; display: flex; align-items: center; }
+    .h2h-cell.header.col { justify-content: center; }
+    .h2h-cell.header.row { justify-content: flex-start; }
+    .h2h-cell.corner { background: transparent; border-color: transparent; display: flex; align-items: center; justify-content: center; }
+    .h2h-cell .h2h-axis-legend { font-size: 11px; color: var(--text-muted); font-style: italic; }
+    .h2h-cell .h2h-axis-legend span { margin: 0 4px; }
     .h2h-cell .h2h-score { font-weight: 700; font-size: 16px; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; margin-top: 2px; }
     .h2h-cell .h2h-score.pos { color: var(--accent-green); }
     .h2h-cell .h2h-score.neg { color: var(--accent-orange); }
