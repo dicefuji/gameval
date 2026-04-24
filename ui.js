@@ -127,16 +127,21 @@
 
   // ─── Game history ──────────────────────────────────────────────────────────
   function logHistory(result) {
-    const { scores, totalCells, tick } = result;
+    const { scores, totalCells, tick, terminationReason } = result;
     // Clear the empty-state placeholder on first game.
     const emptyState = histList.querySelector('.history-empty');
     if (emptyState) emptyState.remove();
     const winnerIdx = scores.indexOf(Math.max(...scores));
+    const reasonTag = terminationReason === 'stalemate'
+      ? ' · stalemate'
+      : terminationReason === 'board_full'
+        ? ' · board full'
+        : '';
     const entry = document.createElement('div');
     entry.className = 'hist-item';
-    entry.textContent = `game ${history.length + 1} · ${tick} ticks · ${ALGO_NAMES[winnerIdx % ALGO_NAMES.length]} wins (${Math.round((scores[winnerIdx] / totalCells) * 100)}%)`;
+    entry.textContent = `game ${history.length + 1} · ${tick} ticks${reasonTag} · ${ALGO_NAMES[winnerIdx % ALGO_NAMES.length]} wins (${Math.round((scores[winnerIdx] / totalCells) * 100)}%)`;
     histList.prepend(entry);
-    history.push({ tick, winnerIdx, scores: [...scores], totalCells });
+    history.push({ tick, winnerIdx, scores: [...scores], totalCells, terminationReason });
   }
 
   // ─── Game loop ─────────────────────────────────────────────────────────────
@@ -151,7 +156,13 @@
       if (result.done) {
         stopGame();
         const winIdx = result.scores.indexOf(Math.max(...result.scores));
-        winner.textContent = `winner: ${ALGO_NAMES[winIdx % ALGO_NAMES.length]} — ${Math.round((result.scores[winIdx] / result.totalCells) * 100)}%`;
+        const winPct = Math.round((result.scores[winIdx] / result.totalCells) * 100);
+        const reasonText = result.terminationReason === 'stalemate'
+          ? `stalemate at tick ${result.tick} \u2014 no player could make progress`
+          : result.terminationReason === 'board_full'
+            ? `board full at tick ${result.tick} \u2014 every reachable cell claimed`
+            : `tick ${result.tick}`;
+        winner.textContent = `winner: ${ALGO_NAMES[winIdx % ALGO_NAMES.length]} \u2014 ${winPct}% (${reasonText})`;
         winner.style.display = 'block';
         logHistory(result);
         return;

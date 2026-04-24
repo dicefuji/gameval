@@ -394,4 +394,67 @@ That's a clean, defensible, construct-valid claim. Don't overclaim — don't say
 
 ---
 
-*Document version: 1.0 | Research period: 2022–April 2026 | Primary sources: 96 papers and frameworks*
+## Part 9: Arena War Game Rules and Outcome Modes
+
+The preceding sections are the abstract methodology framework we commit to. This section is the concrete specification of the game itself — the rules LLMs are asked to reason about, the exact scoring loop, and every way a game can end. Any claim made from Arena War scores has to be interpretable against this spec.
+
+### 9.1 — The game in one paragraph
+
+Arena War is a multi-player territorial expansion game played on a circular `N × N` grid (default `N = 40`, ~1257 in-play cells out of 1600). Each player controls a starting 3×3 "seed" patch placed evenly around an inner ring. On every tick, each player's algorithm is called with its player id, the current grid, and the grid size, and returns a *frontier* — a list of `[row, col]` candidate cells it wants to claim this tick. The engine enforces a per-tick **claim budget** of `max(1, floor(N/8))` cells per player (5 cells/tick at `N = 40`). Unclaimed cells inside the circular play mask are `EMPTY (-1)`; cells outside the mask are `null` and not playable. Cells that two or more players request on the same tick enter a **conflict state** and stay unclaimed. Territory is scored as `score[i] = count(grid[r][c] === i)`, and territory percentage is `score[i] / totalCells`, where `totalCells` counts all in-circle cells (owned + still EMPTY). The winner is the player with the highest territory percentage when the game ends.
+
+### 9.2 — Outcome modes: how a game ends
+
+Arena War has **three** distinct termination modes. Every reported game carries a `terminationReason` field (`schemaVersion >= 7`) so downstream consumers can distinguish them without inferring from tick count or score sum.
+
+#### Mode 1 — `board_full` (the "clean win" case)
+
+Every reachable in-circle cell has been claimed. `score[0] + score[1] + ... + score[n] === totalCells`. Territory percentages sum to ~100%. Typical of well-formed algorithms against each other on short-to-medium `tick` counts. Interpretation: the game reached its geometric ceiling; the winner filled more of the board than the other players before them. This is the ideal outcome for "how strong is the algorithm?" readings.
+
+#### Mode 2 — `stalemate` (the "no-progress" case)
+
+No player claimed any cell on the current tick. Every algorithm either returned an empty frontier, proposed only already-owned cells, or every proposed cell conflicted with another player and was discarded. The board ends with **visible unclaimed territory remaining** — often substantial (sometimes >50% of the board), and percentages summing to less than 100%. **This is not a bug or a display glitch.** It is a legitimate outcome of the game rules, and in adversarial play it is *the informative case* — stalemates signal that the strategies in play have reached a mutually-blocking configuration where no one can expand without conflicting with someone else. Interpretation: the winner is the player with the largest territory when progress stopped, even if that's 21% of the full board. Reading a stalemate as "bad result" is the wrong frame — it is a real competitive outcome, just a less decisive one than `board_full`.
+
+Stalemates are most commonly caused by:
+
+- **Algorithm exhaustion**: the algorithm's internal rules can't identify any more legal cells to claim (e.g. a BFS that only expands along already-discovered frontiers, after all adjacent EMPTY cells have been blocked off by opponents).
+- **Mutual-block equilibrium**: all remaining EMPTY cells are equidistant from multiple players, so every claim attempt triggers a conflict and gets discarded.
+- **Partitioned territory**: one player is completely walled off from any remaining EMPTY cells (no adjacency path), so its frontier is empty; the other players can still progress but may themselves get blocked later.
+
+Stalemate frequency is an *informative metric per model*. A model whose algorithm reliably fills the board to `board_full` demonstrates geometric completion. A model whose algorithm stalemates at 20% territory might have a good opening but poor late-game. The dashboard surfaces this via the per-iteration "Termination mix" field (results.js).
+
+#### Mode 3 — `max_ticks` (safety cap — should never fire)
+
+The node eval harness (`eval-runner.js` `runGame()`) enforces `MAX_TICKS = size * size` as a runaway-protection bound. Under normal play, games terminate via `board_full` or `stalemate` well before this bound (a `40 × 40` game bounded at 1600 ticks will almost always finish within ~100–200). Observing `max_ticks` in production data is a signal that an algorithm is livelocking — e.g. it's proposing and re-proposing cells without ever making progress in a way that doesn't count as "no change" to the engine. Treat it as a bug to investigate, not a game outcome. The browser engine (`engine.js`) does *not* enforce a max-tick cap; in the sandbox, livelocking algorithms will simply run until the user stops them.
+
+### 9.3 — Why a 21% winner at tick 145 with unclaimed territory is a legitimate result
+
+Under Mode 2 (`stalemate`), the game ended because all four players' algorithms collectively stopped making progress. The winner (say Diagonal Spiral at 21%) controls the most territory at the moment of arrest. The remaining ~79% of the circle is split between (a) the other players' own territories, (b) conflict-induced permanent EMPTY cells, and (c) cells that no algorithm's frontier ever reached. All three are legitimate engine states. The UI should communicate this explicitly — the arena winner banner now reads `winner: X — 21% (stalemate at tick 145 — no player could make progress)` to distinguish it from a 21% win in a `board_full` game (which would be a decisive win in a very tight 4-way split) or a 21% lead at `max_ticks` (which would be a livelock bug).
+
+This is downstream of the benchmark's construct claim from §1.1: we measure *iterative algorithmic reasoning under adversarial pressure*, not "maximum territory captured under idealized conditions." In adversarial play, stalemates are strong evidence that the environment is actually adversarial — if every game terminated at `board_full`, the arena would be too easy.
+
+### 9.4 — Claim resolution rules, in full
+
+The exact algorithm every tick, in order:
+
+1. Each player's algorithm is called with `(playerId, gridCopy, size)` and returns a frontier array.
+2. Engine walks the frontier for each player, accepting up to `claimsPerTick` candidates subject to: valid `[row, col]` with integers, inside the grid, `grid[r][c] === EMPTY`. Invalid candidates are silently discarded. Attempts to claim `null` cells (outside the circle) trigger the `EXPLOIT_DETECTED` failure flag.
+3. If two or more players request the same cell on the same tick, the cell is flagged as a conflict and stays EMPTY for this tick and every future tick — *unless a single player eventually wins it uncontested on a later tick*.
+4. All non-conflicted claims are applied atomically at the end of the tick.
+5. `tick++`, check termination (Mode 1 first, then Mode 2).
+
+The claims-per-tick budget is what makes the game iterative rather than one-shot. At `N = 40`, players can claim 5 cells/tick. A 1257-cell circle therefore needs at least `1257 / (5 × 4) ≈ 63` ticks to fill even with zero conflicts.
+
+### 9.5 — What this means for LLM evaluation
+
+Under §9.2, a model's score on Arena War is a composite of:
+
+- *How efficiently its algorithm expands territory* (board_full rate, mean territory at board_full)
+- *How robustly it handles adversarial opponents* (avoids livelock, recovers from partial blocks)
+- *How well it performs under stalemate conditions* (largest share of territory at arrest-time)
+
+A model whose algorithm has perfect opening but no endgame will score moderate territory at `stalemate` games and never hit `board_full`. A model with strong late-game but weak opening might hit `board_full` against weak opponents but stalemate at low percentages against strong ones. **The territory % alone cannot distinguish these profiles.** Only the joint distribution of `(terminationReason, pct, ticks)` can. The dashboard surfaces this joint distribution in the "Representative game" / "Termination mix" meta rows per iteration.
+
+---
+
+*Document version: 1.1 | Research period: 2022–April 2026 | Primary sources: 96 papers and frameworks*
+*Changelog: v1.1 added Part 9 (Arena War Game Rules and Outcome Modes) to document the stalemate outcome mode explicitly and align with eval-runner schemaVersion 7 terminationReason field.*

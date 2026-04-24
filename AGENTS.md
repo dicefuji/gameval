@@ -82,7 +82,8 @@
   - Uses seeded randomness (`seededRandom`) to vary starting positions per game while keeping game rules and algorithm behavior deterministic.
   - Computes per-iteration statistics (mean, std, min/max, 95% CI) stored in each iteration result.
   - Emits a per-iteration `failureFlags` array with annotated failure codes (see Failure Taxonomy section below).
-  - Writes top-level `evalVersion`, `changelog`, and `schemaVersion` on every `eval-results.json`; `schemaVersion` is currently `6`.
+  - Writes top-level `evalVersion`, `changelog`, and `schemaVersion` on every `eval-results.json`; `schemaVersion` is currently `7`.
+  - Records a `terminationReason` on every per-game entry (`games[*].terminationReason`): one of `'board_full'`, `'stalemate'`, or `'max_ticks'`. See **Game Rules and Outcome Modes** below. This is the data source for the dashboard's per-iteration "Game ended" / "Termination mix" meta rows and the arena banner's stalemate-vs-board-full disambiguation.
   - Supports `--reasoning-effort <low|medium|high|xhigh>` to set OpenAI `reasoning_effort` on gpt-5/o1/o3/o4-family calls. Recorded as `protocol.reasoningEffort` (null when unset). Ignored for Anthropic and for non-reasoning OpenAI models.
   - Supports per-model provider pinning via `--model name@provider` syntax (e.g. `--model gpt-4o@openai --model claude-sonnet-4-5-20250929@anthropic`) for mixed-provider runs in a single invocation; models without `@` fall back to `--provider`. Per-model provider is written to `models[<name>].provider` in the output.
   - Supports reproducible runs via `--seed <n>` top-level run seed; per-game seeds are deterministically derived from `(runSeed, modelIndex, iter, gameIndex)` and dumped into `protocol.perGameSeeds` for bit-for-bit replay.
@@ -200,9 +201,20 @@
 - The dashboard consumes these flags through `renderFailureTaxonomy()` in `results.js`. Flag labels, colors, and blurbs live in `FAILURE_FLAG_META`; adjust them there when adding new flags.
 
 ## Benchmark Versioning (Phase 7)
-- `EVAL_VERSION` (currently `arena-war-eval-v0.3.3`) and `CHANGELOG` live at the top of `eval-runner.js` and are written into both the top-level result object and `protocol.evalVersion`.
+- `EVAL_VERSION` (currently `arena-war-eval-v0.3.4`) and `CHANGELOG` live at the top of `eval-runner.js` and are written into both the top-level result object and `protocol.evalVersion`.
 - When introducing any eval-behavior change that affects scores, bump `EVAL_VERSION` and prepend a one-line entry to `CHANGELOG`.
 - When changing the shape of `eval-results.json`, bump `schemaVersion`. The frontend reads both `state.results.evalVersion` and `state.results.schemaVersion`.
+
+## Game Rules and Outcome Modes
+- Arena War is a 4-player territorial expansion game on a 40×40 circular grid (~1257 in-play cells). Each tick, every algorithm returns up to 5 candidate cells (`frontier`); the engine resolves conflicts (same-tick collisions stay unclaimed) and applies non-conflicting claims.
+- Every game ends in exactly one of three modes, surfaced as `terminationReason` on `games[*]` in `eval-results.json` (`schemaVersion >= 7`) and on the live engine `step()` return value (runtime only):
+  - **`board_full`** — every reachable in-circle cell claimed. Territories sum to ~100%.
+  - **`stalemate`** — no player claimed anything this tick. Visible unclaimed territory is *expected* and legitimate; the winner is the largest-territory player at arrest-time, even if that's 21% of the board.
+  - **`max_ticks`** — runaway safety cap (`size * size` ticks) enforced by `eval-runner.js runGame()` only. Hitting it is a livelock-bug signal, not a game outcome. Browser `engine.js` does not enforce this cap.
+- The browser engine (`engine.js`), the games/arena-war mirror (`games/arena-war/engine.js`), and the node eval harness (`eval-runner.js runGame()`) all emit `terminationReason`. When changing game rules or termination logic, update all three in lockstep.
+- The arena winner banner (`ui.js`) reads `result.terminationReason` and renders, e.g., `winner: X — 21% (stalemate at tick 145 — no player could make progress)` vs `winner: X — Y% (board full at tick N — every reachable cell claimed)`.
+- The results dashboard (`results.js`) renders `formatTerminationReason(reason)` in the Inspect-a-model-run panel's meta rows: a per-representative-game `Game ended: ...` line and a per-iteration `Termination mix: 3× board_full · 2× stalemate` aggregate.
+- Full spec and stalemate-cause taxonomy in [`benchmark-methodology.md` §9](benchmark-methodology.md#part-9-arena-war-game-rules-and-outcome-modes). User-facing summary in [`README.md` §"Game Rules and Outcome Modes"](README.md#game-rules-and-outcome-modes).
 
 ## Known Gaps And Next Priorities
 - Phase 3 addressed: controlled variance (seeded randomness), consistency/spread reporting, and `N >= 5` default are all implemented.

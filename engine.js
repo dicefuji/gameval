@@ -25,6 +25,7 @@ const ArenaEngine = (function () {
       this.algos = algos;
       this.tick = 0;
       this.done = false;
+      this.terminationReason = null;
       this.grid = [];
       this.mask = [];
       this._buildMask();
@@ -134,9 +135,25 @@ const ArenaEngine = (function () {
 
       this.tick++;
 
-      // Check termination: no empty cells remain or no progress
+      // Check termination: two distinct outcome modes.
+      //   - board_full: every reachable in-circle cell has been claimed.
+      //     All players progressed as far as the geometry allows; scores
+      //     sum to 100% of totalCells.
+      //   - stalemate: nobody claimed anything this tick. Every algorithm
+      //     either returned an empty frontier, proposed only already-owned
+      //     cells, or every proposed cell conflicted with another player
+      //     and was discarded. Scores typically sum below 100% — visible
+      //     unclaimed (white) territory remaining on the board is expected
+      //     and explicitly part of this benchmark's outcome space. See
+      //     benchmark-methodology.md §9.2.
       const emptyCells = this._countEmpty();
-      if (changed === 0 || emptyCells === 0) this.done = true;
+      if (emptyCells === 0) {
+        this.done = true;
+        this.terminationReason = 'board_full';
+      } else if (changed === 0) {
+        this.done = true;
+        this.terminationReason = 'stalemate';
+      }
 
       return this._getResult(changed > 0);
     }
@@ -160,7 +177,14 @@ const ArenaEngine = (function () {
           if (v >= 0) scores[v]++;
         }
       }
-      return { changed, scores, totalCells: total, tick: this.tick, done: this.done };
+      return {
+        changed,
+        scores,
+        totalCells: total,
+        tick: this.tick,
+        done: this.done,
+        terminationReason: this.done ? (this.terminationReason || null) : null,
+      };
     }
 
     /** Full game state snapshot — used for result logging and replay */

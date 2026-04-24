@@ -1043,6 +1043,32 @@
           </p>
         </section>
 
+        <section class="section panel animate-in animate-in-delay-4">
+          <div class="panel-title">Game Rules &amp; Outcome Modes</div>
+          <p class="section-copy">Arena War is a 4-player territorial expansion game on a 40×40 circular grid. Each tick, every algorithm returns a <em>frontier</em> of at most 5 candidate cells; the engine enforces claim limits and resolves conflicts (same-tick collisions stay unclaimed). Games end in one of three distinct modes, every game carries its <code>terminationReason</code> in the output JSON (<code>schemaVersion ≥ 7</code>).</p>
+          <div class="read-guide">
+            <div class="guide-card">
+              <strong>board_full — the clean win</strong>
+              <p>Every reachable in-circle cell has been claimed. Territory percentages sum to ~100%. The winner filled more of the board than the other players before the board filled.</p>
+            </div>
+            <div class="guide-card">
+              <strong>stalemate — the no-progress case</strong>
+              <p>No player claimed anything this tick. Visible unclaimed territory is <em>expected</em> and legitimate — it's an informative signal of mutually-blocking adversarial play. The winner has the largest territory at arrest-time, even if that's 21% of the full board.</p>
+            </div>
+            <div class="guide-card">
+              <strong>max_ticks — safety cap (should never fire)</strong>
+              <p>The node eval runner caps runaway games at <code>size × size</code> ticks. Normal play terminates via board_full or stalemate well before this. Hitting max_ticks in production data is a livelock-bug signal to investigate.</p>
+            </div>
+            <div class="guide-card">
+              <strong>What this means for reading the dashboard</strong>
+              <p>Territory % alone can't distinguish a 21% board_full (tight 4-way split) from a 21% stalemate (no-progress arrest) from a 21% max_ticks (livelock bug). The joint distribution of <code>(terminationReason, pct, ticks)</code> is the real signal. Inspect the per-iteration "Termination mix" row below to see how often each mode fired.</p>
+            </div>
+          </div>
+          <p class="methodology-note" style="margin-top:14px">
+            Full spec, claim-resolution rules, and stalemate-cause taxonomy in <a href="benchmark-methodology.md#part-9-arena-war-game-rules-and-outcome-modes" target="_blank" rel="noopener noreferrer">benchmark-methodology.md §9</a>.
+          </p>
+        </section>
+
         <section class="section panel animate-in animate-in-delay-3" id="pairwise-panel" hidden>
           <div class="panel-title">Pairwise Comparisons</div>
           <p class="section-copy">Bootstrap comparison of each model pair's best iteration scores (4000 resamples, α = 0.05). CI excluding zero means the pair is statistically separable under this run's sample size.</p>
