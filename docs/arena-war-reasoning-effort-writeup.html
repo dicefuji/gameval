@@ -245,9 +245,12 @@
       font-size: 13px;
       line-height: 1.5;
       color: var(--essay-ink);
-      margin-top: 16px;
+      /* Align caption with body text column: figure starts at margin-left 160px,
+       * body text at 260px, so caption needs an extra 100px of left offset within
+       * the figure to line up with the prose underneath. */
+      margin: 16px 0 0 100px;
       text-align: left;
-      max-width: 720px;
+      max-width: 660px;
     }
     figcaption .fig-num { font-weight: 600; }
     figcaption em { font-style: italic; color: var(--color-warm-ink); }
@@ -301,6 +304,7 @@
         margin-right: 0;
       }
       article > figure { margin: 48px 0; max-width: 100%; }
+      figcaption { margin-left: 0; max-width: 100%; }
       h1 { font-size: 38px; line-height: 44px; margin-top: 60px; }
       .subtitle { font-size: 18px; line-height: 26px; }
       .chip { margin-left: 0; }
