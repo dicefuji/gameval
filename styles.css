@@ -63,14 +63,16 @@
   --color-warm-ink-strong: #090909;
   --color-code-chip: rgba(0, 0, 0, 0.05);
 
-  /* Matte qualitative chart palette. Pairs roughly to:
-   *   rose        → warm primary (Claude-family)
-   *   ochre       → warm secondary (GPT-family)
-   *   slate       → cool baseline (reference / qwen-family)
+  /* Matte qualitative chart palette. Provider mapping (matches the
+   * arena-war-reasoning-effort essay's 5 figures, which are the first
+   * consumer of these tokens):
+   *   ochre       → Claude-family (claude-opus-4-7, claude-sonnet-*)
+   *   rose        → GPT-family (gpt-5, gpt-5.4-*, gpt-4*)
+   *   slate       → cool baseline (reference algorithms, qwen-family)
    *   purple      → fourth-model accent
    *   teal        → fifth-model accent
-   *   rose-deep   → strong/emphatic variant of rose
-   *   ochre-deep  → strong/emphatic variant of ochre
+   *   ochre-deep  → strong/emphatic variant of ochre (Claude labels)
+   *   rose-deep   → strong/emphatic variant of rose (GPT labels)
    * Colors sit at ~45–60% lightness and ~35–50% saturation so
    * they read on cream without fighting the serif prose. */
   --palette-rose: #b44d6d;
