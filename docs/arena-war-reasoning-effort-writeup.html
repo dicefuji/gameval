@@ -387,9 +387,11 @@
         <!-- y-axis label -->
         <text class="chart-axis-label" x="-60" y="145" text-anchor="middle" transform="rotate(-90, -60, 145)">best iter mean (%)</text>
 
-        <!-- Reference mean line (avg across runs ≈ 20.35%): dashed -->
+        <!-- Reference mean line (avg across runs ≈ 20.35%): dashed.
+             Label sits above the line at its left edge so it never collides
+             with the bars in the right-most (adversarial × high) group. -->
         <line x1="0" y1="185" x2="780" y2="185" stroke="#5a8fb0" stroke-width="1.5" stroke-dasharray="4 4" />
-        <text class="chart-tick" x="780" y="181" text-anchor="end" fill="#5a8fb0" font-weight="600">held-out reference ≈ 20%</text>
+        <text class="chart-tick" x="4" y="178" text-anchor="start" fill="#5a8fb0" font-weight="600">held-out reference ≈ 20%</text>
 
         <!-- X axis -->
         <line class="axis-line" x1="0" y1="280" x2="780" y2="280" />
@@ -884,7 +886,7 @@
           <line x1="319.04" y1="0" x2="357.76" y2="0" stroke="#3b3b39" stroke-width="1.2" />
           <line x1="319.04" y1="-5" x2="319.04" y2="5" stroke="#3b3b39" stroke-width="1.2" />
           <line x1="357.76" y1="-5" x2="357.76" y2="5" stroke="#3b3b39" stroke-width="1.2" />
-          <text class="chart-tick" x="345" y="4" font-weight="600" fill="#fff">+42.3%</text>
+          <text class="chart-tick" x="362" y="4" text-anchor="start" font-weight="600" fill="#3b3b39">+42.3%</text>
           <text class="chart-tick" x="-130" y="4" text-anchor="end">gpt-5.4 · self-play · high</text>
         </g>
         <!-- Row 2: opus adv/high +32.08 CI [+29.52, +34.84] -->
@@ -893,7 +895,7 @@
           <line x1="236.16" y1="0" x2="278.72" y2="0" stroke="#3b3b39" stroke-width="1.2" />
           <line x1="236.16" y1="-5" x2="236.16" y2="5" stroke="#3b3b39" stroke-width="1.2" />
           <line x1="278.72" y1="-5" x2="278.72" y2="5" stroke="#3b3b39" stroke-width="1.2" />
-          <text class="chart-tick" x="264" y="4" font-weight="600" fill="#fff">+32.1%</text>
+          <text class="chart-tick" x="284" y="4" text-anchor="start" font-weight="600" fill="#3b3b39">+32.1%</text>
           <text class="chart-tick" x="-130" y="4" text-anchor="end">opus · adv · high</text>
         </g>
         <!-- Row 3: opus sp/high +30.96 CI [+27.20, +34.52] -->
@@ -902,7 +904,7 @@
           <line x1="217.6" y1="0" x2="276.16" y2="0" stroke="#3b3b39" stroke-width="1.2" />
           <line x1="217.6" y1="-5" x2="217.6" y2="5" stroke="#3b3b39" stroke-width="1.2" />
           <line x1="276.16" y1="-5" x2="276.16" y2="5" stroke="#3b3b39" stroke-width="1.2" />
-          <text class="chart-tick" x="254" y="4" font-weight="600" fill="#fff">+31.0%</text>
+          <text class="chart-tick" x="281" y="4" text-anchor="start" font-weight="600" fill="#3b3b39">+31.0%</text>
           <text class="chart-tick" x="-130" y="4" text-anchor="end">opus · self-play · high</text>
         </g>
         <!-- Row 4: gpt-5.4 adv/def +20.20 CI [+15.80, +24.44] -->
@@ -911,7 +913,7 @@
           <line x1="126.4" y1="0" x2="195.52" y2="0" stroke="#3b3b39" stroke-width="1.2" />
           <line x1="126.4" y1="-5" x2="126.4" y2="5" stroke="#3b3b39" stroke-width="1.2" />
           <line x1="195.52" y1="-5" x2="195.52" y2="5" stroke="#3b3b39" stroke-width="1.2" />
-          <text class="chart-tick" x="168" y="4" font-weight="600" fill="#fff">+20.2%</text>
+          <text class="chart-tick" x="200" y="4" text-anchor="start" font-weight="600" fill="#3b3b39">+20.2%</text>
           <text class="chart-tick" x="-130" y="4" text-anchor="end">gpt-5.4 · adv · default</text>
         </g>
         <!-- Row 5: opus adv/def +15.00 CI [+12.28, +17.84] -->
@@ -920,7 +922,7 @@
           <line x1="98.24" y1="0" x2="142.72" y2="0" stroke="#3b3b39" stroke-width="1.2" />
           <line x1="98.24" y1="-5" x2="98.24" y2="5" stroke="#3b3b39" stroke-width="1.2" />
           <line x1="142.72" y1="-5" x2="142.72" y2="5" stroke="#3b3b39" stroke-width="1.2" />
-          <text class="chart-tick" x="126" y="4" font-weight="600" fill="#fff">+15.0%</text>
+          <text class="chart-tick" x="147" y="4" text-anchor="start" font-weight="600" fill="#3b3b39">+15.0%</text>
           <text class="chart-tick" x="-130" y="4" text-anchor="end">opus · adv · default</text>
         </g>
         <!-- Row 6: gpt-5.4 sp/def +13.60 CI [+11.88, +15.52] -->
@@ -929,7 +931,7 @@
           <line x1="95.04" y1="0" x2="124.16" y2="0" stroke="#3b3b39" stroke-width="1.2" />
           <line x1="95.04" y1="-5" x2="95.04" y2="5" stroke="#3b3b39" stroke-width="1.2" />
           <line x1="124.16" y1="-5" x2="124.16" y2="5" stroke="#3b3b39" stroke-width="1.2" />
-          <text class="chart-tick" x="115" y="4" font-weight="600" fill="#fff">+13.6%</text>
+          <text class="chart-tick" x="129" y="4" text-anchor="start" font-weight="600" fill="#3b3b39">+13.6%</text>
           <text class="chart-tick" x="-130" y="4" text-anchor="end">gpt-5.4 · self-play · default</text>
         </g>
         <!-- Row 7: gpt-5.4 adv/high +10.48 CI [+6.96, +13.80] -->
@@ -938,7 +940,7 @@
           <line x1="55.68" y1="0" x2="110.4" y2="0" stroke="#3b3b39" stroke-width="1.2" />
           <line x1="55.68" y1="-5" x2="55.68" y2="5" stroke="#3b3b39" stroke-width="1.2" />
           <line x1="110.4" y1="-5" x2="110.4" y2="5" stroke="#3b3b39" stroke-width="1.2" />
-          <text class="chart-tick" x="92" y="4" font-weight="600" fill="#fff">+10.5%</text>
+          <text class="chart-tick" x="115" y="4" text-anchor="start" font-weight="600" fill="#3b3b39">+10.5%</text>
           <text class="chart-tick" x="-130" y="4" text-anchor="end">gpt-5.4 · adv · high ★</text>
         </g>
         <!-- Row 8: opus sp/def -10.76 CI [-17.36, -3.56] — only negative -->
@@ -947,7 +949,7 @@
           <line x1="-138.88" y1="0" x2="-28.48" y2="0" stroke="#3b3b39" stroke-width="1.2" />
           <line x1="-138.88" y1="-5" x2="-138.88" y2="5" stroke="#3b3b39" stroke-width="1.2" />
           <line x1="-28.48" y1="-5" x2="-28.48" y2="5" stroke="#3b3b39" stroke-width="1.2" />
-          <text class="chart-tick" x="-92" y="4" font-weight="600" fill="#fff" text-anchor="middle">−10.8%</text>
+          <text class="chart-tick" x="-143" y="4" font-weight="600" fill="#3b3b39" text-anchor="end">−10.8%</text>
           <text class="chart-tick" x="-130" y="4" text-anchor="end">opus · self-play · default</text>
         </g>
       </g>
