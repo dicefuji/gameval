@@ -37,6 +37,22 @@ That loop measures both raw coding ability and iterative learning ability. The o
 
 ---
 
+## Game Rules and Outcome Modes
+
+Arena War is a 4-player territorial expansion game on a circular grid. The default grid size is 60×60 (~2724 in-play cells); the arena sandbox also offers 40×40 (~1184 cells) and 80×80 (~4872 cells). Each tick, every player's algorithm returns a *frontier* of up to `max(1, floor(N/8))` candidate cells (7 cells/tick at N=60, 5 at N=40, 10 at N=80); the engine enforces claim limits, resolves conflicts (two players requesting the same cell on the same tick leave it unclaimed), and scores territory as `score[i] / totalCells`.
+
+Every game ends in exactly one of three modes, recorded as `terminationReason` in the output JSON (`schemaVersion ≥ 7`):
+
+- **`board_full`** — the "clean win" case. Every reachable in-circle cell has been claimed. Territories sum to ~100%. The winner filled more of the board than the other players before it filled.
+- **`stalemate`** — the "no-progress" case. No player claimed any cell this tick — every algorithm either ran out of legal frontier, proposed only already-owned cells, or every proposed cell conflicted with another player. **Visible unclaimed territory remaining is expected and legitimate**, not a display bug. In adversarial play this is the informative case: it signals the strategies have reached a mutually-blocking equilibrium. The winner is the player with the largest territory at arrest-time, even if that's 21% of the full board.
+- **`max_ticks`** — a runaway safety cap (`size × size` ticks). Under normal play, games terminate via `board_full` or `stalemate` well before this. Hitting `max_ticks` in production data is a livelock-bug signal to investigate, not a game outcome.
+
+Territory % alone cannot distinguish a 21% `board_full` from a 21% `stalemate` from a 21% `max_ticks`. The joint distribution of `(terminationReason, pct, ticks)` is the real signal. The dashboard surfaces this per iteration in the Inspect-a-model-run panel.
+
+Full spec — claim resolution in detail, stalemate cause taxonomy, implications for LLM scoring — in [`benchmark-methodology.md` §9](benchmark-methodology.md#part-9-arena-war-game-rules-and-outcome-modes).
+
+---
+
 ## Reward Signals
 
 The runner feeds structured feedback back into later rounds instead of asking the model to restart from scratch every time. The key reward signals are:
@@ -102,7 +118,8 @@ Runs the actual benchmark loop. It is responsible for:
 4. recording reward signals and learning curves
 5. stopping when the run hits the iteration cap or plateaus
 6. annotating each iteration with a `failureFlags` array covering syntax errors, runtime crashes, timeouts, out-of-bounds exploits, regressions, and plateau stalls
-7. writing a comparison-friendly `eval-results.json` tagged with `evalVersion`, `changelog`, and `schemaVersion` (currently `6`)
+7. writing a comparison-friendly `eval-results.json` tagged with `evalVersion`, `changelog`, and `schemaVersion` (currently `7`)
+8. recording a `terminationReason` on every per-game entry (`'board_full' | 'stalemate' | 'max_ticks'`) so downstream consumers can distinguish clean wins from no-progress stalemates
 
 Key CLI flags worth knowing:
 - `--model name[@provider]` (repeatable): models to benchmark. Append `@openai` or `@anthropic` to pin the provider for a single model.

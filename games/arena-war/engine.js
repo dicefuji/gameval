@@ -18,6 +18,7 @@ class ArenaWarEngine extends GameEngine {
     this.algos = algos;
     this.tick = 0;
     this.done = false;
+    this.terminationReason = null;
     this.grid = [];
     this.mask = [];
     this._buildMask();
@@ -127,9 +128,16 @@ class ArenaWarEngine extends GameEngine {
 
     this.tick++;
 
-    // Check termination: no empty cells remain or no progress
+    // Check termination: two distinct outcome modes (see engine.js for rationale
+    // and benchmark-methodology.md §9.2 for the methodology commitment).
     const emptyCells = this._countEmpty();
-    if (changed === 0 || emptyCells === 0) this.done = true;
+    if (emptyCells === 0) {
+      this.done = true;
+      this.terminationReason = 'board_full';
+    } else if (changed === 0) {
+      this.done = true;
+      this.terminationReason = 'stalemate';
+    }
 
     return this._getResult(changed > 0);
   }
@@ -153,7 +161,14 @@ class ArenaWarEngine extends GameEngine {
         if (v >= 0) scores[v]++;
       }
     }
-    return { changed, scores, totalCells: total, tick: this.tick, done: this.done };
+    return {
+      changed,
+      scores,
+      totalCells: total,
+      tick: this.tick,
+      done: this.done,
+      terminationReason: this.done ? (this.terminationReason || null) : null,
+    };
   }
 
   /** Full game state snapshot — used for result logging and replay */

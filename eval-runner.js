@@ -40,8 +40,9 @@ const DEFAULT_PLATEAU_MODE = 'ci_overlap';
 const DEFAULT_MODE = 'self-play';
 const DEFAULT_GAME = 'arena-war';
 
-const EVAL_VERSION = 'arena-war-eval-v0.3.3';
+const EVAL_VERSION = 'arena-war-eval-v0.3.4';
 const CHANGELOG = [
+  "v0.3.4: Record per-game terminationReason ('board_full' | 'stalemate' | 'max_ticks') on every games[*] entry so the arena and dashboard can distinguish clean wins from no-progress stalemates (schemaVersion 7). Score-neutral \u2014 game scoring logic unchanged; stalemate vs board_full was already the termination behavior, just not surfaced.",
   'v0.3.3: Added --reasoning-effort <low|medium|high|xhigh> CLI flag; plumbed through providers for OpenAI reasoning models as reasoning_effort param; token floor scales with effort (32768 for high, 65536 for xhigh). Records protocol.reasoningEffort (schemaVersion 6). Score-affecting for OpenAI reasoning families.',
   'v0.3.2: Raised per-call output budget from 2048 to 8192 tokens (was truncating verbose generators); added OpenAI reasoning-model support (gpt-5/o1/o3/o4) via max_completion_tokens with a 16384 floor to cover internal reasoning. Score-affecting.',
   'v0.3.1: Per-model provider pinning via --model name@provider; models[*].provider written to output (schemaVersion 5)',
@@ -137,6 +138,14 @@ function runGame(size, algos, opts = {}) {
   let tick = 0;
   const MAX_TICKS = size * size;
   const perPlayerFlags = Array.from({ length: nPlayers }, () => new Set());
+  // Outcome modes (see benchmark-methodology.md §9.2):
+  //   - 'board_full': every reachable in-circle cell has been claimed.
+  //   - 'stalemate':  no player claimed anything this tick; further progress
+  //                   is impossible under the current algorithms.
+  //   - 'max_ticks':  runaway safety cap — games are bounded at size*size ticks.
+  //                   Under normal play the board fills or stalemates well
+  //                   before this; hitting it is an implementation bug signal.
+  let terminationReason = 'max_ticks';
 
   while (tick < MAX_TICKS) {
     const claimMap = new Map();
@@ -171,8 +180,8 @@ function runGame(size, algos, opts = {}) {
     for (const [, [r, c, id]] of claimMap)
       if (id >= 0 && grid[r][c] === EMPTY) { grid[r][c] = id; changed++; }
     tick++;
-    if (changed === 0) break;
-    if (!grid.flat().includes(EMPTY)) break;
+    if (!grid.flat().includes(EMPTY)) { terminationReason = 'board_full'; break; }
+    if (changed === 0) { terminationReason = 'stalemate'; break; }
   }
 
   const scores = new Array(nPlayers).fill(0);
@@ -187,6 +196,7 @@ function runGame(size, algos, opts = {}) {
     scores,
     totalCells: total,
     ticks: tick,
+    terminationReason,
     finalGrid: captureFinalGrid ? grid.map(row => [...row]) : undefined,
     perPlayerFlags: perPlayerFlags.map(set => [...set]),
   };
@@ -782,6 +792,7 @@ async function runSingleIteration({
       scores: result.scores,
       totalCells: result.totalCells,
       winnerIndex,
+      terminationReason: result.terminationReason,
       finalGrid: result.finalGrid,
     });
     console.log(`  Game ${gameIndex + 1}: ${pct}% in ${result.ticks} ticks`);
@@ -1122,7 +1133,7 @@ async function runEval(opts = {}) {
 
   const benchmarkResults = {
     generatedAt: new Date().toISOString(),
-    schemaVersion: 6,
+    schemaVersion: 7,
     evalVersion: EVAL_VERSION,
     changelog: CHANGELOG,
     protocol: {

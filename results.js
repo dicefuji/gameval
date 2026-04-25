@@ -94,6 +94,19 @@
     `;
   }
 
+  // Maps the terminationReason enum written by the runner / browser engine
+  // into human copy. Kept in lockstep with engine.js + games/arena-war/engine.js
+  // + eval-runner.js runGame(). See benchmark-methodology.md §9.2 for the
+  // outcome-mode semantics.
+  function formatTerminationReason(reason) {
+    switch (reason) {
+      case 'board_full': return 'board full (every reachable cell claimed)';
+      case 'stalemate':  return 'stalemate (no player could progress)';
+      case 'max_ticks':  return 'max-tick safety cap hit';
+      default:           return String(reason);
+    }
+  }
+
   function listRow(left, right) {
     return `
       <div class="list-row">
@@ -884,6 +897,25 @@
     ];
     if (rep) {
       metaRows.push(metaItem('Representative game', `${rep.pct}% in ${rep.ticks} ticks`));
+      if (rep.terminationReason) {
+        metaRows.push(metaItem('Game ended', formatTerminationReason(rep.terminationReason)));
+      }
+    }
+    // Aggregate terminationReason across this iteration's games so viewers can
+    // see whether the model's algorithm reliably fills the board or frequently
+    // stalemates. Stalemates are valid outcomes (see benchmark-methodology.md
+    // §9.2) but a high stalemate rate is informative.
+    const iterGames = Array.isArray(selectedIteration.games) ? selectedIteration.games : [];
+    if (iterGames.length && iterGames.some(g => g.terminationReason)) {
+      const counts = iterGames.reduce((acc, g) => {
+        const k = g.terminationReason || 'unknown';
+        acc[k] = (acc[k] || 0) + 1;
+        return acc;
+      }, {});
+      const parts = Object.entries(counts)
+        .sort((a, b) => b[1] - a[1])
+        .map(([k, n]) => `${n}\u00d7 ${formatTerminationReason(k)}`);
+      metaRows.push(metaItem('Termination mix', parts.join(' \u00b7 ')));
     }
     snapshotMeta.innerHTML = metaRows.join('');
 
