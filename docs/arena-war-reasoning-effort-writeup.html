@@ -338,7 +338,7 @@
 
   <ul>
     <li>
-      At <code>reasoning=high</code>, <strong>gpt-5.4-2026-03-05 reached 57% territory at iter 3 in self-play</strong> (95% CI <code>[54.8, 59.1]</code>). At default reasoning on the same seed, its ceiling was 39%. That is a <strong>+18pp absolute gain from flipping a single runtime flag</strong>, and it puts gpt-5.4's reference-margin at <strong>+42.3% over the held-out reference</strong> (prior record: +13.6%, a 3.1× increase).
+      At <code>reasoning=high</code>, <strong>gpt-5.4-2026-03-05 reached 57% territory at iter 3 in self-play</strong> (95% CI <code>[54.8, 59.1]</code>). At default reasoning on the same seed, its ceiling was 39%. That is a <strong>+18pp absolute gain from flipping a single runtime flag</strong>, and it puts gpt-5.4's reference-margin at <strong>+42.3% over the held-out reference</strong> (prior record: +20.2%, a 2.1× increase).
     </li>
     <li>
       In self-play at <code>reasoning=high</code>, the bootstrap pairwise Δ between opus-4-7 and gpt-5.4 is <strong>tied</strong> (Δ = −3.0%, CI <code>[−7.4, +1.3]</code>). But the matched-lobby head-to-head of their best iterations is <strong>17-6-2 for gpt-5.4</strong>, Δ = −8.3% CI <code>[−13.0, −3.3]</code>, significant. The two tests disagree; we argue the H2H is the stronger evidence.
@@ -960,14 +960,14 @@
       </text>
     </svg>
     <figcaption>
-      <span class="fig-num">Figure 5.</span> Δ vs held-out reference across all eight (model × run) entries, sorted by Δ. Error bars are 95% bootstrap CIs. Seven of eight entries are significantly above zero. The one negative entry — <em>opus · self-play · default</em> — is the small-N variance outlier discussed in Finding 3. The top two entries, both under <code>reasoning=high</code>, are separated by ~1pp and are statistically tied within their CIs. The prior reference-Δ record was +20.2%; the new record is +42.3%, a 3.1× bump.
+      <span class="fig-num">Figure 5.</span> Δ vs held-out reference across all eight (model × run) entries, sorted by Δ. Error bars are 95% bootstrap CIs. Seven of eight entries are significantly above zero. The one negative entry — <em>opus · self-play · default</em> — is the small-N variance outlier discussed in Finding 3. The top two entries, both under <code>reasoning=high</code>, are separated by ~1pp and are statistically tied within their CIs. The prior reference-Δ record was +20.2%; the new record is +42.3%, a 2.1× bump.
     </figcaption>
   </figure>
 
   <p>Two observations:</p>
 
   <ul>
-    <li><strong>Prior record</strong>: +20.2% (gpt-5.4 adversarial default). <strong>New record</strong>: +42.3% (gpt-5.4 self-play <code>high</code>). That is the largest margin any model has ever posted against this reference, and the prior record was already held by the same model. It's a 3.1× bump from one knob.</li>
+    <li><strong>Prior record</strong>: +20.2% (gpt-5.4 adversarial default). <strong>New record</strong>: +42.3% (gpt-5.4 self-play <code>high</code>). That is the largest margin any model has ever posted against this reference, and the prior record was already held by the same model. It's a 2.1× bump from one knob.</li>
     <li>The only cell that loses to reference is opus self-play default, and it's an outlier that <code>reasoning=high</code> doesn't influence (opus doesn't receive the knob). That row is overwritten by the noisy second opus-self-play run; both "versions of opus self-play" exist in our data, and they land in completely different places. The reference is the only statistic that is robust enough to report for opus here.</li>
   </ul>
 
