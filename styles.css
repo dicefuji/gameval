@@ -44,6 +44,43 @@
   --transition-base: 0.25s ease;
   --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
   --font-mono: 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
+
+  /* ─── Essay tokens (Thoughtful-Lab-style publishing surface) ───
+   * Added for the arena-war-reasoning-effort writeup + a future
+   * light retune of results.html. None of the existing selectors
+   * consume these yet; this commit is deliberately token-only so
+   * the current dashboard and arena render identically.
+   *
+   * Source Serif 4 is SIL-OFL and ships as a variable font; Georgia
+   * is the universal fallback so the essay remains legible without
+   * a web-font fetch. */
+  --font-serif: 'Source Serif 4', 'Source Serif Pro', 'Crimson Pro', Georgia, 'Times New Roman', serif;
+  --font-display: var(--font-serif);
+
+  /* Warm cream publishing surface, sampled from thoughtfullab.com */
+  --color-cream: #f9f9f6;
+  --color-warm-ink: #3b3b39;
+  --color-warm-ink-strong: #090909;
+  --color-code-chip: rgba(0, 0, 0, 0.05);
+
+  /* Matte qualitative chart palette. Pairs roughly to:
+   *   rose        → warm primary (Claude-family)
+   *   ochre       → warm secondary (GPT-family)
+   *   slate       → cool baseline (reference / qwen-family)
+   *   purple      → fourth-model accent
+   *   teal        → fifth-model accent
+   *   rose-deep   → strong/emphatic variant of rose
+   *   ochre-deep  → strong/emphatic variant of ochre
+   * Colors sit at ~45–60% lightness and ~35–50% saturation so
+   * they read on cream without fighting the serif prose. */
+  --palette-rose: #b44d6d;
+  --palette-rose-deep: #8c3652;
+  --palette-ochre: #c49b2c;
+  --palette-ochre-deep: #8f6f12;
+  --palette-slate: #5a8fb0;
+  --palette-purple: #9a7ab8;
+  --palette-teal: #3f9a8f;
+  --palette-muted: #6a6a6a;
 }
 
 :root[data-theme="light"] {
