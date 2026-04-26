@@ -7,8 +7,8 @@
  * typography (h1 size, .subhead width, .page-header spacing) stays inline
  * because those values intentionally differ between the two surfaces.
  *
- * Phase 9D (see orchestration.md) — follow-up to 9A/9B/9C which unified
- * design tokens and the two-pane arena / hero-first results layouts.
+ * Shared design-token layer for the two-pane arena and hero-first results
+ * layouts.
  */
 
 /* ─── Design Tokens (superset used by both pages) ─── */

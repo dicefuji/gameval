@@ -1,6 +1,46 @@
-# gameval
+# Gameval
 
-# Arena War — Model Comparison Eval
+Gameval is a small, inspectable benchmark harness for running iterative game-like coding evaluations against LLMs. The current benchmark is **Arena War**, a JavaScript territory-capture game that measures how well a model improves an algorithm after repeated competitive feedback.
+
+This repository is intended to be useful from a fresh public clone: install dependencies, serve the dashboard, inspect the bundled sample run, then optionally add provider API keys and run your own evals.
+
+## Quick start
+
+```bash
+git clone https://github.com/dicefuji/gameval.git
+cd gameval
+npm install
+npm run check
+npm run serve
+```
+
+Node.js 20 or newer is recommended (`.nvmrc` is provided).
+
+Open:
+
+- `http://localhost:3000/results.html` — benchmark dashboard
+- `http://localhost:3000/arena.html` — interactive sandbox / replay surface
+
+No API keys are required to view the dashboard or sandbox. A bundled `sample-eval-results.json` file loads automatically when no local `eval-results.json` exists.
+
+To run live model evaluations, copy `.env.example`, export the relevant keys, and run the eval CLI:
+
+```bash
+cp .env.example .env
+# Add ANTHROPIC_API_KEY and/or OPENAI_API_KEY, then export them in your shell.
+
+npm run eval -- \
+  --model claude-opus-4-7@anthropic \
+  --model gpt-5.5-2026-04-23@openai \
+  --iterations 6 \
+  --games-per-iter 25 \
+  --seed 424242 \
+  --reasoning-effort high
+```
+
+The runner writes `eval-results.json` in the repo root. That file is gitignored and takes precedence over the bundled sample when the dashboard loads.
+
+---
 
 Arena War is an iterative coding benchmark for comparing recent models on the same adversarial task. Each model receives one starting prompt, writes a JavaScript territory-capture algorithm, gets tested headlessly against a shared set of opponents, sees the reward signals from that round, and then tries again. The result is a live, inspectable learning curve that shows which models improve fastest and which models finish strongest.
 
@@ -33,7 +73,7 @@ Each model goes through the same loop:
 5. The next prompt feeds reward signals back to the model: leaderboard position, current best code, and recent game history.
 6. Repeat for roughly 5-6 iterations, or stop early once improvement has saturated.
 
-That loop measures both raw coding ability and iterative learning ability. The output is not just a final score. It is a trace of how a model adapts under repeated competitive pressure.
+The output is not just a final score. It is a trace of how a model adapts under repeated competitive pressure. The benchmark's valid claim is intentionally narrow: it measures iterative spatial algorithm improvement in this task, not general software engineering ability.
 
 ---
 
@@ -89,16 +129,21 @@ The benchmark-first workflow is:
 ```
 .
 ├── AGENTS.md                   — persistent repo notes for future agent sessions
+├── CONTRIBUTING.md             — public contribution and benchmark-discipline guide
+├── LICENSE                     — MIT license
+├── SECURITY.md                 — generated-code and secrets safety policy
 ├── algorithms.js               — built-in baseline strategies
 ├── arena.html                  — interactive sandbox arena
 ├── engine.js                   — browser game engine
 ├── eval-runner.js              — headless multi-model eval harness
+├── games/                      — early multi-game interface and Arena War registration
 ├── package.json
 ├── prompts.js                  — prompt templates and iterative feedback wording
 ├── registry.js                 — shared model algorithm registry (browser)
 ├── results.html                — results dashboard shell
 ├── results.js                  — results dashboard logic
 ├── sample-eval-results.json    — bundled sample run so fresh clones render
+├── scripts/check.mjs           — syntax and sample-data validation used by npm run check
 ├── styles.css                  — shared design tokens + base chrome (both pages)
 ├── ui.js                       — sandbox UI controller
 ├── eval-results.json           — local eval output written by the runner (gitignored)
@@ -190,11 +235,14 @@ The implementation is moving in this order:
 
 ---
 
-## Quick Start
+## Common commands
 
 ```bash
 # Install dependencies
 npm install
+
+# Run syntax/sample/provider smoke checks
+npm run check
 
 # Serve the static frontend
 npm run serve
@@ -206,7 +254,7 @@ npm run serve
 # http://localhost:3000/arena.html
 
 # Run a quick local benchmark (requires ANTHROPIC_API_KEY)
-export ANTHROPIC_API_KEY=sk-...
+export ANTHROPIC_API_KEY=...
 npm run eval:quick
 
 # Run a multi-model comparison
@@ -216,12 +264,19 @@ npm run eval -- --model claude-sonnet-4-20250514 --model gpt-4o
 npm run eval -- --model claude-sonnet-4-5-20250929@anthropic --model gpt-4o@openai --model gpt-4.1-mini@openai
 
 # Frontier comparison with high reasoning effort on the OpenAI side
-npm run eval -- --model claude-opus-4-7@anthropic --model gpt-5.4-2026-03-05@openai --reasoning-effort high --seed 424242
+npm run eval -- --model claude-opus-4-7@anthropic --model gpt-5.5-2026-04-23@openai --reasoning-effort high --seed 424242
 ```
 
 The runner writes `eval-results.json` in the repo root. Reload `results.html` after a run to inspect the output. If you haven't run the eval yet, both pages fall back to `sample-eval-results.json` so you still see a working dashboard and a populated arena picker.
 
 When reading the dashboard, treat a "good" result primarily as a relative one: stronger finishing performance and/or faster improvement than peer models under the same protocol. The page should make that clear without requiring a deep read of the methodology document.
+
+## Public repo notes
+
+- `eval-results.json`, `.env`, logs, and `.devin-*.json` local artifacts are ignored by git.
+- Commit `sample-eval-results.json` only when intentionally updating the public demo dataset.
+- Use `CONTRIBUTING.md` for PR expectations and benchmark-claim discipline.
+- Use `docs/roadmap.md` for the public roadmap; old internal orchestration notes are intentionally not part of the public repo surface.
 
 ---
 

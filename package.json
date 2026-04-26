@@ -1,14 +1,35 @@
 {
-  "name": "arena-war-eval",
+  "name": "gameval",
   "version": "0.1.0",
-  "description": "Iterative Arena War benchmark for comparing model performance",
+  "description": "Iterative Arena War benchmark for comparing model improvement under adversarial feedback",
+  "license": "MIT",
+  "private": false,
   "main": "eval-runner.js",
   "scripts": {
+    "check": "node scripts/check.mjs && node test-providers.js",
     "eval": "node eval-runner.js",
     "eval:quick": "node eval-runner.js --iterations 3 --games-per-iter 3",
     "eval:full": "node eval-runner.js --iterations 6 --games-per-iter 5",
     "test:providers": "node test-providers.js",
     "serve": "python3 -m http.server 3000"
+  },
+  "keywords": [
+    "benchmark",
+    "evals",
+    "llm",
+    "arena-war",
+    "javascript"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dicefuji/gameval.git"
+  },
+  "bugs": {
+    "url": "https://github.com/dicefuji/gameval/issues"
+  },
+  "homepage": "https://github.com/dicefuji/gameval#readme",
+  "engines": {
+    "node": ">=20"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",

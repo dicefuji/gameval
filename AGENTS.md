@@ -6,6 +6,18 @@
 - Update this file after any important architecture, methodology, workflow, or setup change.
 - Treat this file as the handoff doc for the next agent: it should explain what the benchmark claims, how the current implementation works, what is still weak, and how to continue safely.
 
+## Public Repo Hygiene
+- This repo is now intended to be public-clone friendly.
+- Public onboarding files:
+  - `README.md` — user-facing quick start, architecture overview, and common commands.
+  - `CONTRIBUTING.md` — PR expectations and benchmark-claim discipline.
+  - `SECURITY.md` — generated-code and secret-handling guidance.
+  - `.env.example` — safe provider-key template; never commit real `.env` files.
+  - `docs/roadmap.md` — public roadmap replacing the old internal `orchestration.md`.
+- `npm run check` is the low-cost validation command: JS syntax checks, bundled sample metadata validation, and provider smoke tests without real API calls.
+- `.devin-*.json` local eval artifacts, `eval-results.json`, `.env*`, logs, coverage, and dist outputs are ignored by git.
+- Commit `sample-eval-results.json` only when intentionally updating the bundled public demo dataset.
+
 ## Valid Benchmark Claim
 - Arena War should make a narrow, defensible claim:
   "This benchmark measures a model's ability to iteratively improve a spatial territory algorithm through adversarial competition feedback."
@@ -230,6 +242,10 @@
   2. Further surface consistency/uncertainty alongside the CI bands on the learning curve.
   3. Provide a more seamless path from "best-vs-best candidate" to actual arena replay.
 
+## Public Roadmap
+- Use `docs/roadmap.md` for public-facing roadmap status.
+- Do not revive `orchestration.md`; it was removed because it exposed stale internal phase/sub-agent tracking rather than durable project direction.
+
 ## Phase 8 Backlog (post-Phase-7)
 - **Elo / opponent-aware rating**: replace or supplement `avgPct` with a rating that accounts for which opponents each algorithm actually beat. Needed before any cross-run leaderboard claim.
 - **Held-out reference algorithms**: a small frozen set of strong-but-fixed algorithms that are never shared with models, used to produce a stable anchor across eval versions.
@@ -240,6 +256,7 @@
 
 ## Setup And Validation
 - Install dependencies with `npm install`.
+- Run `npm run check` before opening a PR.
 - Start the local frontend with `npm run serve`.
 - Open:
   - `http://localhost:3000/results.html` for the main dashboard
@@ -253,7 +270,7 @@
   - `ANTHROPIC_API_KEY` for anthropic provider (default)
   - `OPENAI_API_KEY` for openai provider
 - `eval-results.json` is written locally and ignored by git.
-- Run `node test-providers.js` to verify the provider backend loads without making API calls.
+- `npm run check` includes `node test-providers.js`, which verifies the provider backend loads without making API calls.
 
 ## Interpretation Rules
 - Prefer shared-protocol comparison over isolated single-run impressions.
@@ -263,10 +280,8 @@
 - If two models are close and variance is missing, avoid strong claims.
 
 ## Git And Environment Notes
-- The repo currently has local commits beyond `origin/main`.
-- This machine's git/tooling environment can fail on normal `git commit` because an unsupported `--trailer` flag is injected against an older git version.
-- If standard `git commit` fails with `unknown option 'trailer'`, use the same safe low-level `git commit-tree` workaround used earlier in this conversation.
-- Do not change git config to work around this.
+- Start follow-up work from a fresh branch off latest `main`.
+- Do not commit local `.devin-*.json`, `eval-results.json`, `.env`, logs, or generated scratch artifacts.
 
 ## Working Agreements
 - Keep the browser engine and Node eval harness behavior aligned when game rules change.
