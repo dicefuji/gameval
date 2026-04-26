@@ -1,4 +1,11 @@
 node_modules/
 .DS_Store
+.env
+.env.*
+!.env.example
+*.log
+coverage/
+dist/
 eval-results.json
+.devin-*.json
 !sample-eval-results.json

@@ -94,7 +94,39 @@ function testCliParsing() {
   assert.strictEqual(multiArgs.mode, 'adversarial');
   assert.deepStrictEqual(multiArgs.models, ['gpt-4o', 'gpt-4-turbo']);
 
+  const reproducibleArgs = parseCliArgs([
+    'node', 'eval-runner.js',
+    '--seed', '424242',
+    '--iterations', '6',
+    '--games-per-iter', '25',
+    '--output', 'custom-results.json',
+    '--reasoning-effort', 'high',
+  ]);
+  assert.strictEqual(reproducibleArgs.seed, 424242,
+    'Should parse reproducible run seed');
+  assert.strictEqual(reproducibleArgs.maxIterations, 6,
+    'Should parse iteration count');
+  assert.strictEqual(reproducibleArgs.gamesPerIter, 25,
+    'Should parse games per iteration');
+  assert.strictEqual(reproducibleArgs.reasoningEffort, 'high',
+    'Should parse reasoning effort');
+  assert(reproducibleArgs.outputPath.endsWith('custom-results.json'),
+    'Should parse custom output path');
+
   console.log('  ✓ CLI flag parsing tests passed');
+}
+
+function testReasoningEffortValidation() {
+  const { validateReasoningEffort, REASONING_EFFORT_LEVELS } = require('./providers');
+
+  for (const effort of REASONING_EFFORT_LEVELS) {
+    validateReasoningEffort(effort);
+  }
+  validateReasoningEffort(undefined);
+  assert.throws(() => validateReasoningEffort('maximum'),
+    /Unknown reasoning effort/);
+
+  console.log('  ✓ Reasoning-effort validation tests passed');
 }
 
 // ─── Run all tests ───────────────────────────────────────────────────────────
@@ -104,6 +136,7 @@ function runTests() {
   try {
     testProviderInstantiation();
     testCliParsing();
+    testReasoningEffortValidation();
     console.log('\nAll tests passed.\n');
   } catch (error) {
     console.error('\nTest failed:', error.message);
